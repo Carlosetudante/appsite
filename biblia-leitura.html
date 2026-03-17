@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#071428">
+  <title>Bíblia — Leitura da Marcação</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="logo.png">
+</head>
+<body class="bible-reading-page">
+  <div class="bible-reading-intro" id="bibleReadingIntro">
+    <div class="bible-reading-sky">
+      <div class="bible-reading-cloud cloud-a"></div>
+      <div class="bible-reading-cloud cloud-b"></div>
+      <div class="bible-reading-cloud cloud-c"></div>
+      <div class="bible-reading-cloud cloud-d"></div>
+    </div>
+
+    <div class="bible-reading-gate" id="bibleReadingGate">
+      <div class="bible-reading-gate-door left"></div>
+      <div class="bible-reading-gate-door right"></div>
+      <div class="bible-reading-gate-shine"></div>
+    </div>
+
+    <div class="bible-reading-intro-label">
+      <div class="bible-reading-intro-title">Entrada para Leitura</div>
+      <div class="bible-reading-intro-sub">Preparando a palavra marcada...</div>
+      <button type="button" class="ghost" id="bibleReadingSkipBtn">Pular abertura</button>
+    </div>
+  </div>
+
+  <div class="bible-page-header">
+    <a class="bible-page-back" id="bibleReadingBackBtn" href="biblia-anotacoes.html">← Voltar</a>
+    <div class="bible-page-title">
+      <span class="bible-page-icon">📖</span>
+      <span>Leitura da Marcação</span>
+    </div>
+    <div class="bible-page-links"></div>
+  </div>
+
+  <main class="bible-page-main">
+    <div class="bible-interface bible-reading-shell">
+      <div id="bibleReadingError" class="bible-error-box hidden"></div>
+
+      <div class="bible-reading-card" id="bibleReadingCard">
+        <div class="bible-reading-head">
+          <div class="bible-reading-ref" id="bibleReadingRef">Sem referência</div>
+          <div class="bible-reading-meta" id="bibleReadingMeta">Leitura</div>
+        </div>
+        <div class="bible-reading-content" id="bibleReadingContent"></div>
+      </div>
+    </div>
+  </main>
+
+  <script src="biblia-leitura.js"></script>
+</body>
+</html>

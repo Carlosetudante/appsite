@@ -1,0 +1,1006 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Loja do Herói</title>
+  <meta name="theme-color" content="#0b1220">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./logo.svg">
+  <link rel="stylesheet" href="./style.css">
+  <style>
+    body.store-page-body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 16px;
+      background: radial-gradient(circle at 20% 10%, rgba(255, 221, 87, 0.12), transparent 36%),
+                  radial-gradient(circle at 80% 90%, rgba(96, 165, 250, 0.14), transparent 42%),
+                  linear-gradient(180deg, #061021, #0b1830);
+      color: #e6eef8;
+    }
+
+    .store-page {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      gap: 12px;
+    }
+
+    .store-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(6, 12, 22, 0.45);
+    }
+
+    .store-title {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #ffe5af;
+    }
+
+    .store-subtitle {
+      margin-top: 4px;
+      opacity: 0.86;
+      font-size: 0.9rem;
+    }
+
+    .store-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .store-player-line {
+      margin: 8px 0 10px;
+      font-size: 0.9rem;
+      opacity: 0.88;
+    }
+
+    .store-warning {
+      margin: 6px 0 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(248, 113, 113, 0.45);
+      background: rgba(248, 113, 113, 0.14);
+      font-size: 0.88rem;
+    }
+
+    .store-warning.hidden {
+      display: none;
+    }
+
+    .store-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%);
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(8, 16, 30, 0.94);
+      color: #eaf2ff;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 999;
+      max-width: min(92vw, 620px);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    .store-toast.show {
+      opacity: 1;
+    }
+
+    @media (max-width: 680px) {
+      body.store-page-body {
+        padding: 12px;
+      }
+      .store-head {
+        padding: 10px;
+      }
+      .store-title {
+        font-size: 1.05rem;
+      }
+    }
+  </style>
+</head>
+<body class="store-page-body">
+  <main class="store-page">
+    <header class="store-head">
+      <div>
+        <h1 class="store-title">Loja Separada do Herói</h1>
+        <div class="store-subtitle">Compre itens, veja saldo da bolsa e gerencie foto social em uma tela dedicada.</div>
+      </div>
+      <div class="store-actions">
+        <a class="ghost" href="./index.html">Voltar ao jogo</a>
+        <button class="ghost" id="refreshBtn" type="button">Atualizar</button>
+        <button class="ghost" id="syncCloudBtn" type="button">Sincronizar nuvem</button>
+      </div>
+    </header>
+
+    <section class="section hero-section shop-shell">
+      <div class="shop-balance-row">
+        <div class="shop-balance-label">Saldo da bolsa</div>
+        <div class="shop-balance-value"><span id="coinsBalance">0</span> 🪙</div>
+      </div>
+      <div class="shop-theme-tabs" aria-hidden="true">
+        <span class="shop-theme-tab">Herói</span>
+        <span class="shop-theme-tab">Habilidades</span>
+        <span class="shop-theme-tab active">Loja</span>
+        <span class="shop-theme-tab">Bolsa</span>
+        <span class="shop-theme-tab">Estatísticas</span>
+      </div>
+      <div class="small" id="coinRuleText">Ganhe moedas ao subir de nível e use para desbloquear recursos visuais e sociais.</div>
+      <div class="store-player-line" id="storePlayerLine">Carregando perfil...</div>
+      <div class="small" id="cloudSyncStatus">Nuvem: não verificada.</div>
+      <div class="store-warning hidden" id="storeWarning"></div>
+
+      <div class="wallet-panel" id="walletPanel">
+        <div class="wallet-panel-head">
+          <div>
+            <div class="wallet-panel-title">Carteira Real</div>
+            <div class="small" id="walletLastMove">Sem movimentações ainda.</div>
+          </div>
+          <div class="wallet-panel-coins"><span id="walletCurrentCoins">0</span> 🪙</div>
+        </div>
+        <div class="wallet-grid">
+          <div class="wallet-card">
+            <span class="wallet-card-label">Total ganho</span>
+            <strong id="walletTotalEarned">0 🪙</strong>
+          </div>
+          <div class="wallet-card">
+            <span class="wallet-card-label">Total gasto</span>
+            <strong id="walletTotalSpent">0 🪙</strong>
+          </div>
+          <div class="wallet-card">
+            <span class="wallet-card-label">Compras</span>
+            <strong id="walletPurchaseCount">0</strong>
+          </div>
+          <div class="wallet-card">
+            <span class="wallet-card-label">Próximo item</span>
+            <strong id="walletNextUnlock">Sem itens</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="shop-profile-row">
+        <button class="ghost" id="setProfilePhotoBtn" type="button">Definir Foto de Perfil</button>
+        <button class="ghost" id="clearProfilePhotoBtn" type="button">Remover Foto</button>
+      </div>
+      <div class="shop-profile-preview" id="profilePhotoPreviewWrap">
+        <img id="profilePhotoPreview" alt="Foto de perfil social">
+        <div class="small" id="profilePhotoHint">Sem foto de perfil social definida.</div>
+      </div>
+      <input type="file" id="profilePhotoInput" accept="image/*" hidden>
+
+      <div class="shop-list" id="shopList"></div>
+    </section>
+  </main>
+
+  <div class="store-toast" id="storeToast"></div>
+
+  <script src="./supabase-js.umd.js"></script>
+  <script src="./supabase.js"></script>
+  <script>
+    const DEFAULT_AURA_COLOR = '#ffdd57';
+    const MAX_PLAYER_PROFILE_PHOTO_DATA_URL_LENGTH = 260000;
+    const SHOP_ITEMS = Object.freeze([
+      { key: 'profilePhoto', title: 'Foto de Perfil Social', emoji: '🖼️', cost: 80, description: 'Libera sua foto no perfil da sala para outros jogadores verem.', badge: 'Básico' },
+      { key: 'auraColors', title: 'Aura Personalizada', emoji: '🎨', cost: 120, description: 'Permite trocar a cor da aura do herói.', badge: 'Básico' },
+      { key: 'crown', title: 'Coroa de Prestígio', emoji: '👑', cost: 420, description: 'Mostra coroa no seu perfil e nas mensagens da sala.', badge: 'Lendário' },
+      { key: 'specialStickers', title: 'Pacote Especial de Figurinhas', emoji: '✨', cost: 180, description: 'Desbloqueia figurinhas especiais exclusivas na sala.', badge: 'Incomum' },
+      { key: 'heroFrame', title: 'Moldura do Herói', emoji: '🛡️', cost: 240, description: 'Exibe moldura especial no herói e destaque no perfil da sala.', badge: 'Raro' },
+      { key: 'nameGlow', title: 'Nome Brilhante', emoji: '🌟', cost: 150, description: 'Aplica brilho no seu nome nas mensagens da sala.', badge: 'Incomum' },
+      { key: 'nameMotion', title: 'Nome em Movimento', emoji: '🌀', cost: 240, description: 'Ativa animação no nome do usuário para todos verem no bate-papo.', badge: 'Raro', ability: 'Habilidade: seu nome ganha animação contínua na sala.' },
+      { key: 'taskMastery', title: 'Maestria de Missões', emoji: '⚔️', cost: 320, description: 'Aumenta em 30% o XP ganho ao concluir tarefas.', badge: 'Épico' },
+      { key: 'dailyBooster', title: 'Bênção Diária', emoji: '☀️', cost: 280, description: 'Aumenta o XP da recompensa diária em +15.', badge: 'Raro' },
+      { key: 'cinemaRoom', title: 'Sala Cinema Premium', emoji: '🎬', cost: 650, description: 'Libera a sala Cinema para assistir links de vídeo adicionados por você.', badge: 'Mítico' },
+      { key: 'legendTitle', title: 'Título Lenda do Reino', emoji: '📜', cost: 520, description: 'Libera o título exclusivo "Lenda do Reino".', badge: 'Mítico' },
+      { key: 'chatThemeAurora', title: 'Tema Aurora da Sala', emoji: '🌌', cost: 95, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'chatThemeNeblina', title: 'Tema Neblina Lunar', emoji: '🌫️', cost: 95, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'chatThemeSafira', title: 'Tema Safira Real', emoji: '🔷', cost: 110, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'chatThemeEsmeralda', title: 'Tema Esmeralda Viva', emoji: '🟢', cost: 110, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'chatThemeRubi', title: 'Tema Rubi Imperial', emoji: '🔴', cost: 130, description: 'Item cosmético colecionável para sua conta.', badge: 'Incomum' },
+      { key: 'chatThemeObsidiana', title: 'Tema Obsidiana', emoji: '⚫', cost: 130, description: 'Item cosmético colecionável para sua conta.', badge: 'Incomum' },
+      { key: 'auraPrata', title: 'Aura Prateada', emoji: '🥈', cost: 120, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'auraOuro', title: 'Aura Dourada Plus', emoji: '🥇', cost: 170, description: 'Item cosmético colecionável para sua conta.', badge: 'Incomum' },
+      { key: 'auraPlatina', title: 'Aura Platina', emoji: '💠', cost: 220, description: 'Item cosmético colecionável para sua conta.', badge: 'Raro' },
+      { key: 'auraArcoIris', title: 'Aura Arco-Íris', emoji: '🌈', cost: 260, description: 'Item cosmético colecionável para sua conta.', badge: 'Raro' },
+      { key: 'nomeSombra', title: 'Nome Sombra', emoji: '🌑', cost: 120, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'nomeChamas', title: 'Nome em Chamas', emoji: '🔥', cost: 180, description: 'Item cosmético colecionável para sua conta.', badge: 'Incomum' },
+      { key: 'nomeGelo', title: 'Nome Congelante', emoji: '🧊', cost: 180, description: 'Item cosmético colecionável para sua conta.', badge: 'Incomum' },
+      { key: 'nomeRelampago', title: 'Nome Relâmpago', emoji: '⚡', cost: 210, description: 'Item cosmético colecionável para sua conta.', badge: 'Raro' },
+      { key: 'seloLeao', title: 'Selo do Leão', emoji: '🦁', cost: 90, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'seloLobo', title: 'Selo do Lobo', emoji: '🐺', cost: 90, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'seloFenix', title: 'Selo da Fênix', emoji: '🕊️', cost: 150, description: 'Item cosmético colecionável para sua conta.', badge: 'Incomum' },
+      { key: 'seloDragoes', title: 'Selo dos Dragões', emoji: '🐉', cost: 220, description: 'Item cosmético colecionável para sua conta.', badge: 'Raro' },
+      { key: 'stickerPackMeme', title: 'Pacote Meme Turbo', emoji: '🤣', cost: 125, description: 'Pacote colecionável para personalizar sua conta.', badge: 'Comum' },
+      { key: 'stickerPackAnime', title: 'Pacote Anime Stars', emoji: '🎌', cost: 160, description: 'Pacote colecionável para personalizar sua conta.', badge: 'Incomum' },
+      { key: 'stickerPackFe', title: 'Pacote Fé', emoji: '✝️', cost: 160, description: 'Pacote colecionável para personalizar sua conta.', badge: 'Incomum' },
+      { key: 'stickerPackRetro', title: 'Pacote Retrô', emoji: '📼', cost: 135, description: 'Pacote colecionável para personalizar sua conta.', badge: 'Comum' },
+      { key: 'stickerPackNeon', title: 'Pacote Neon', emoji: '💡', cost: 170, description: 'Pacote colecionável para personalizar sua conta.', badge: 'Incomum' },
+      { key: 'stickerPackRpg', title: 'Pacote RPG', emoji: '🧙', cost: 195, description: 'Pacote colecionável para personalizar sua conta.', badge: 'Raro' },
+      { key: 'molduraBronze', title: 'Moldura Bronze', emoji: '🟤', cost: 110, description: 'Item cosmético colecionável para sua conta.', badge: 'Comum' },
+      { key: 'molduraPrata', title: 'Moldura Prata', emoji: '⚪', cost: 150, description: 'Item cosmético colecionável para sua conta.', badge: 'Incomum' },
+      { key: 'molduraOuro', title: 'Moldura Ouro', emoji: '🟡', cost: 210, description: 'Item cosmético colecionável para sua conta.', badge: 'Raro' },
+      { key: 'molduraCristal', title: 'Moldura Cristal', emoji: '🔷', cost: 260, description: 'Item cosmético colecionável para sua conta.', badge: 'Épico' },
+      { key: 'molduraLendaria', title: 'Moldura Lendária', emoji: '🛡️', cost: 340, description: 'Item cosmético colecionável para sua conta.', badge: 'Lendário' },
+      { key: 'entradaTriunfo', title: 'Entrada Triunfo', emoji: '🏁', cost: 120, description: 'Item colecionável para seu perfil de jogador.', badge: 'Comum' },
+      { key: 'entradaSilenciosa', title: 'Entrada Silenciosa', emoji: '🥷', cost: 120, description: 'Item colecionável para seu perfil de jogador.', badge: 'Comum' },
+      { key: 'entradaRaios', title: 'Entrada de Raios', emoji: '⚡', cost: 180, description: 'Item colecionável para seu perfil de jogador.', badge: 'Incomum' },
+      { key: 'entradaSagrada', title: 'Entrada Sagrada', emoji: '✨', cost: 240, description: 'Item colecionável para seu perfil de jogador.', badge: 'Raro' },
+      { key: 'musicaSalaLounge', title: 'Trilha Lounge da Sala', emoji: '🎷', cost: 140, description: 'Item colecionável de trilha temática.', badge: 'Comum' },
+      { key: 'musicaSalaEpic', title: 'Trilha Épica da Sala', emoji: '🎻', cost: 210, description: 'Item colecionável de trilha temática.', badge: 'Raro' },
+      { key: 'musicaArenaRock', title: 'Trilha Rock da Arena', emoji: '🎸', cost: 180, description: 'Item colecionável de trilha temática.', badge: 'Incomum' },
+      { key: 'musicaArenaOrquestra', title: 'Trilha Orquestra da Arena', emoji: '🎼', cost: 250, description: 'Item colecionável de trilha temática.', badge: 'Raro' },
+      { key: 'emblemaTrabalho', title: 'Emblema Trabalho', emoji: '💼', cost: 100, description: 'Emblema colecionável de perfil.', badge: 'Comum' },
+      { key: 'emblemaDisciplina', title: 'Emblema Disciplina', emoji: '📘', cost: 100, description: 'Emblema colecionável de perfil.', badge: 'Comum' },
+      { key: 'emblemaFamilia', title: 'Emblema Família', emoji: '🏠', cost: 100, description: 'Emblema colecionável de perfil.', badge: 'Comum' },
+      { key: 'emblemaVitoria', title: 'Emblema Vitória', emoji: '🏆', cost: 140, description: 'Emblema colecionável de perfil.', badge: 'Incomum' },
+      { key: 'emblemaNofap', title: 'Emblema Força Interior', emoji: '🧠', cost: 140, description: 'Emblema colecionável de perfil.', badge: 'Incomum' },
+      { key: 'emblemaBiblia', title: 'Emblema Palavra', emoji: '📖', cost: 140, description: 'Emblema colecionável de perfil.', badge: 'Incomum' },
+      { key: 'cofreMini', title: 'Cofre Mini', emoji: '🪙', cost: 170, description: 'Item colecionável premium da carteira.', badge: 'Incomum' },
+      { key: 'cofrePrime', title: 'Cofre Prime', emoji: '🏦', cost: 240, description: 'Item colecionável premium da carteira.', badge: 'Raro' },
+      { key: 'cofreImperial', title: 'Cofre Imperial', emoji: '👑', cost: 360, description: 'Item colecionável premium da carteira.', badge: 'Épico' },
+      { key: 'cofreDiamante', title: 'Cofre Diamante', emoji: '💎', cost: 430, description: 'Item colecionável premium da carteira.', badge: 'Lendário', ability: 'Habilidade: +20% em todas as moedas recebidas.' },
+      { key: 'tituloGuardiao', title: 'Título Guardião', emoji: '🛡️', cost: 230, description: 'Título colecionável para o seu perfil.', badge: 'Raro' },
+      { key: 'tituloConquistador', title: 'Título Conquistador', emoji: '⚔️', cost: 300, description: 'Título colecionável para o seu perfil.', badge: 'Épico' },
+      { key: 'tituloMestre', title: 'Título Mestre', emoji: '🎓', cost: 360, description: 'Título colecionável para o seu perfil.', badge: 'Épico' },
+      { key: 'tituloSoberano', title: 'Título Soberano', emoji: '🏰', cost: 460, description: 'Título colecionável para o seu perfil.', badge: 'Lendário' },
+      { key: 'tituloEstrategista', title: 'Título Estrategista', emoji: '♟️', cost: 390, description: 'Título colecionável para o seu perfil.', badge: 'Épico', ability: 'Habilidade: +10% de XP ao concluir tarefas.' },
+      { key: 'tituloVisionario', title: 'Título Visionário', emoji: '🔭', cost: 440, description: 'Título colecionável para o seu perfil.', badge: 'Lendário', ability: 'Habilidade: +10 XP e +1 ponto extra na recompensa diária.' },
+      { key: 'emblemaSabedoria', title: 'Emblema Sabedoria', emoji: '🦉', cost: 120, description: 'Emblema colecionável de perfil.', badge: 'Comum', ability: 'Habilidade: +8 XP extra na recompensa diária.' },
+      { key: 'emblemaLealdade', title: 'Emblema Lealdade', emoji: '🤝', cost: 120, description: 'Emblema colecionável de perfil.', badge: 'Comum', ability: 'Habilidade: +8 moedas extras na recompensa diária.' },
+      { key: 'pacoteCinemaClassico', title: 'Coleção Cinema Clássico', emoji: '🎞️', cost: 210, description: 'Pacote temático colecionável da sala cinema.', badge: 'Incomum' },
+      { key: 'pacoteCinemaAnime', title: 'Coleção Cinema Anime', emoji: '🍿', cost: 220, description: 'Pacote temático colecionável da sala cinema.', badge: 'Raro' },
+      { key: 'pacoteCinemaTerror', title: 'Coleção Cinema Terror', emoji: '👻', cost: 220, description: 'Pacote temático colecionável da sala cinema.', badge: 'Raro' },
+      { key: 'pacoteCinemaAcao', title: 'Coleção Cinema Ação', emoji: '💥', cost: 220, description: 'Pacote temático colecionável da sala cinema.', badge: 'Raro' },
+      { key: 'pacoteCinemaRomance', title: 'Coleção Cinema Romance', emoji: '💞', cost: 210, description: 'Pacote temático colecionável da sala cinema.', badge: 'Incomum' },
+      { key: 'pacoteCinemaDocumentario', title: 'Coleção Cinema Documentário', emoji: '📽️', cost: 200, description: 'Pacote temático colecionável da sala cinema.', badge: 'Incomum' }
+    ]);
+    const SHOP_ITEM_KEYS = Object.freeze(
+      SHOP_ITEMS
+        .map((item) => String(item?.key || '').trim())
+        .filter((key, index, arr) => key && arr.indexOf(key) === index)
+    );
+    const SHOP_FUNCTIONAL_ABILITY_BY_KEY = Object.freeze({
+      profilePhoto: 'Habilidade: libera foto de perfil no bate-papo.',
+      auraColors: 'Habilidade: permite alterar a cor da aura do herói.',
+      crown: 'Habilidade: exibe coroa no perfil e nas mensagens da sala.',
+      specialStickers: 'Habilidade: desbloqueia figurinhas premium animadas.',
+      heroFrame: 'Habilidade: ativa moldura do herói e destaque no chat.',
+      nameGlow: 'Habilidade: aplica brilho no nome no bate-papo.',
+      nameMotion: 'Habilidade: ativa movimento no nome no bate-papo.',
+      taskMastery: 'Habilidade: +30% de XP ao concluir tarefas.',
+      dailyBooster: 'Habilidade: +15 XP na recompensa diária.',
+      cinemaRoom: 'Habilidade: libera acesso à sala cinema premium.',
+      legendTitle: 'Habilidade: libera o título exclusivo Lenda do Reino.',
+      cofreMini: 'Habilidade: +5% em moedas recebidas.',
+      cofrePrime: 'Habilidade: +10% em moedas recebidas.',
+      cofreImperial: 'Habilidade: +15% em moedas recebidas.',
+      cofreDiamante: 'Habilidade: +20% em moedas recebidas.',
+      tituloEstrategista: 'Habilidade: +10% de XP ao concluir tarefas.',
+      tituloVisionario: 'Habilidade: +10 XP e +1 ponto na recompensa diária.',
+      emblemaSabedoria: 'Habilidade: +8 XP na recompensa diária.',
+      emblemaLealdade: 'Habilidade: +8 moedas na recompensa diária.'
+    });
+
+    function getShopItemAbilityText(item = {}) {
+      const safeItem = item && typeof item === 'object' ? item : {};
+      const explicit = String(safeItem.ability || '').trim();
+      if (explicit) return explicit;
+      const key = String(safeItem.key || '').trim();
+      return String(SHOP_FUNCTIONAL_ABILITY_BY_KEY[key] || '').trim();
+    }
+
+    function isShopItemVisible(item = {}) {
+      const safeItem = item && typeof item === 'object' ? item : {};
+      return getShopItemAbilityText(safeItem).length > 0;
+    }
+
+    const SHOP_VISIBLE_ITEMS = Object.freeze(SHOP_ITEMS.filter((item) => isShopItemVisible(item)));
+    const SHOP_SPECIAL_EVENTS = Object.freeze({
+      crown: { label: 'Festival da Coroa', description: 'Cashback de +25 moedas na compra.', coinsBonus: 25 },
+      heroFrame: { label: 'Semana do Herói', description: 'Cashback de +18 moedas na compra.', coinsBonus: 18 },
+      chatThemeAurora: { label: 'Noite Aurora', description: 'Cashback de +10 moedas na compra.', coinsBonus: 10 },
+      stickerPackFe: { label: 'Evento da Fé', description: 'Cashback de +12 moedas na compra.', coinsBonus: 12 },
+      entradaSagrada: { label: 'Portal Sagrado', description: 'Cashback de +20 moedas na compra.', coinsBonus: 20 },
+      musicaSalaEpic: { label: 'Concerto Épico', description: 'Cashback de +16 moedas na compra.', coinsBonus: 16 },
+      emblemaFamilia: { label: 'Laços de Família', description: 'Cashback de +8 moedas na compra.', coinsBonus: 8 },
+      cofrePrime: { label: 'Cofre Premiado', description: 'Cashback de +30 moedas na compra.', coinsBonus: 30 },
+      tituloSoberano: { label: 'Trono Supremo', description: 'Cashback de +35 moedas na compra.', coinsBonus: 35 },
+      pacoteCinemaAnime: { label: 'Maratona Anime', description: 'Cashback de +14 moedas na compra.', coinsBonus: 14 }
+    });
+
+    function getShopSpecialEvent(itemKey = '') {
+      const key = String(itemKey || '').trim();
+      if (!key) return null;
+      const raw = SHOP_SPECIAL_EVENTS[key];
+      if (!raw || typeof raw !== 'object') return null;
+      const label = String(raw.label || 'Evento especial').trim() || 'Evento especial';
+      const description = String(raw.description || 'Bônus por tempo limitado.').trim() || 'Bônus por tempo limitado.';
+      const coinsBonus = Math.max(0, Math.floor(Number(raw.coinsBonus || 0) || 0));
+      return { label, description, coinsBonus };
+    }
+
+    function applyShopSpecialEventPurchaseBonus(itemKey = '') {
+      if (!gameState) return null;
+      const eventCfg = getShopSpecialEvent(itemKey);
+      if (!eventCfg || !eventCfg.coinsBonus) {
+        return eventCfg ? { event: eventCfg, coinsBonus: 0 } : null;
+      }
+      const bonus = Math.max(0, Number(eventCfg.coinsBonus || 0) || 0);
+      if (!bonus) return { event: eventCfg, coinsBonus: 0 };
+      gameState.coins = Math.max(0, Number(gameState.coins || 0) + bonus);
+      if (!gameState.wallet || typeof gameState.wallet !== 'object') {
+        gameState.wallet = normalizeWalletState({}, gameState.coins);
+      }
+      gameState.wallet.totalEarned = Math.max(0, Number(gameState.wallet.totalEarned || 0) + bonus);
+      return { event: eventCfg, coinsBonus: bonus };
+    }
+
+    const elements = {
+      coinsBalance: document.getElementById('coinsBalance'),
+      coinRuleText: document.getElementById('coinRuleText'),
+      walletCurrentCoins: document.getElementById('walletCurrentCoins'),
+      walletTotalEarned: document.getElementById('walletTotalEarned'),
+      walletTotalSpent: document.getElementById('walletTotalSpent'),
+      walletPurchaseCount: document.getElementById('walletPurchaseCount'),
+      walletNextUnlock: document.getElementById('walletNextUnlock'),
+      walletLastMove: document.getElementById('walletLastMove'),
+      shopList: document.getElementById('shopList'),
+      setProfilePhotoBtn: document.getElementById('setProfilePhotoBtn'),
+      clearProfilePhotoBtn: document.getElementById('clearProfilePhotoBtn'),
+      profilePhotoInput: document.getElementById('profilePhotoInput'),
+      profilePhotoPreview: document.getElementById('profilePhotoPreview'),
+      profilePhotoHint: document.getElementById('profilePhotoHint'),
+      storePlayerLine: document.getElementById('storePlayerLine'),
+      storeWarning: document.getElementById('storeWarning'),
+      refreshBtn: document.getElementById('refreshBtn'),
+      syncCloudBtn: document.getElementById('syncCloudBtn'),
+      cloudSyncStatus: document.getElementById('cloudSyncStatus'),
+      storeToast: document.getElementById('storeToast')
+    };
+
+    let sessionUser = '';
+    let sessionUserKey = '';
+    let gameState = null;
+    let readOnlyMode = true;
+    let toastTimer = null;
+
+    function showToast(message = '', timeoutMs = 2800) {
+      if (!elements.storeToast) return;
+      elements.storeToast.textContent = String(message || '');
+      elements.storeToast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        elements.storeToast.classList.remove('show');
+      }, Math.max(1200, Number(timeoutMs) || 2800));
+    }
+
+    function getUsers() {
+      try {
+        return JSON.parse(localStorage.getItem('ur_users') || '{}');
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function normalizeAuthEmail(value = '') {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function getStoredUserKeyByEmail(email, usersInput = null) {
+      const normalized = normalizeAuthEmail(email);
+      if (!normalized) return '';
+      const users = usersInput && typeof usersInput === 'object' ? usersInput : getUsers();
+      if (!users || typeof users !== 'object') return '';
+      if (users[normalized]) return normalized;
+      return Object.keys(users).find((key) => normalizeAuthEmail(key) === normalized) || '';
+    }
+
+    function createDefaultShopUnlocks() {
+      return SHOP_ITEM_KEYS.reduce((acc, key) => {
+        acc[key] = false;
+        return acc;
+      }, {});
+    }
+
+    const SHOP_ADMIN_HANDLES = Object.freeze(['carlos']);
+
+    function normalizeAdminHandle(value = '') {
+      return String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/^@+/, '');
+    }
+
+    function isAdminShopUser(state = gameState) {
+      const candidates = [];
+      if (state && typeof state === 'object') {
+        candidates.push(state.username, state.name);
+      }
+      candidates.push(sessionUser);
+      try {
+        candidates.push(localStorage.getItem('ur_session'));
+      } catch (e) {}
+
+      return candidates.some((raw) => {
+        const safe = normalizeAdminHandle(raw);
+        if (!safe) return false;
+        const localPart = safe.includes('@') ? safe.split('@')[0] : safe;
+        const compact = safe.replace(/\s+/g, '');
+        const compactLocalPart = localPart.replace(/\s+/g, '');
+        return SHOP_ADMIN_HANDLES.some((adminRaw) => {
+          const admin = normalizeAdminHandle(adminRaw);
+          return (
+            safe === admin ||
+            localPart === admin ||
+            compact === admin ||
+            compactLocalPart === admin ||
+            safe.startsWith(`${admin}@`)
+          );
+        });
+      });
+    }
+
+    function unlockAllShopItems(state = gameState) {
+      if (!state || typeof state !== 'object') return false;
+      state.shopUnlocks = normalizeShopUnlocks(state.shopUnlocks || createDefaultShopUnlocks());
+      let changed = false;
+      Object.keys(createDefaultShopUnlocks()).forEach((key) => {
+        if (!state.shopUnlocks[key]) {
+          state.shopUnlocks[key] = true;
+          changed = true;
+        }
+      });
+      return changed;
+    }
+
+    function normalizeShopUnlocks(source = {}) {
+      const raw = source && typeof source === 'object' ? source : {};
+      const normalized = createDefaultShopUnlocks();
+      Object.keys(normalized).forEach((key) => {
+        normalized[key] = !!raw[key];
+      });
+      return normalized;
+    }
+
+    function normalizeWalletState(source = {}, currentCoins = 0) {
+      const raw = source && typeof source === 'object' ? source : {};
+      const spent = Math.max(0, Number(raw.totalSpent || 0) || 0);
+      let earned = Math.max(0, Number(raw.totalEarned || 0) || 0);
+      const current = Math.max(0, Number(currentCoins || 0) || 0);
+      if (earned === 0 && spent === 0 && current > 0) {
+        earned = current;
+      }
+      if (earned < current + spent) {
+        earned = current + spent;
+      }
+      return {
+        totalEarned: earned,
+        totalSpent: spent,
+        purchaseCount: Math.max(0, Number(raw.purchaseCount || 0) || 0),
+        lastAmount: Math.max(0, Number(raw.lastAmount || 0) || 0),
+        lastType: String(raw.lastType || '').trim().toLowerCase().slice(0, 20),
+        lastReason: String(raw.lastReason || '').trim().slice(0, 120),
+        lastAt: String(raw.lastAt || '').trim()
+      };
+    }
+
+    function ensureEconomyState(state) {
+      const safe = state && typeof state === 'object' ? state : {};
+      safe.coins = Math.max(0, Number(safe.coins || 0) || 0);
+      safe.shopUnlocks = normalizeShopUnlocks(safe.shopUnlocks || createDefaultShopUnlocks());
+      safe.wallet = normalizeWalletState(safe.wallet, safe.coins);
+      if (typeof safe.playerProfilePhoto !== 'string') safe.playerProfilePhoto = null;
+      if (typeof safe.auraColor !== 'string' || !safe.auraColor) safe.auraColor = DEFAULT_AURA_COLOR;
+      if (typeof safe.title !== 'string' || !safe.title.trim()) safe.title = 'Viajante';
+      if (typeof safe.name !== 'string' || !safe.name.trim()) safe.name = 'Herói';
+      safe.level = Math.max(1, Number(safe.level || 1) || 1);
+      if (isAdminShopUser(safe)) {
+        unlockAllShopItems(safe);
+      }
+      return safe;
+    }
+
+    function hasShopUnlock(key = '') {
+      if (!gameState || !gameState.shopUnlocks) return false;
+      return !!gameState.shopUnlocks[String(key || '').trim()];
+    }
+
+    function loadGameState() {
+      sessionUser = String(localStorage.getItem('ur_session') || '').trim();
+      const users = getUsers();
+      sessionUserKey = getStoredUserKeyByEmail(sessionUser, users);
+      const resolvedKey = sessionUserKey || sessionUser;
+      const sessionData = resolvedKey && users[resolvedKey] ? users[resolvedKey] : null;
+      if (sessionData && sessionData.character && typeof sessionData.character === 'object') {
+        gameState = ensureEconomyState(sessionData.character);
+        readOnlyMode = false;
+      } else {
+        gameState = ensureEconomyState({
+          name: 'Visitante',
+          title: 'Viajante',
+          level: 1,
+          coins: 0,
+          shopUnlocks: createDefaultShopUnlocks(),
+          wallet: normalizeWalletState({}, 0),
+          playerProfilePhoto: null
+        });
+        readOnlyMode = true;
+      }
+    }
+
+    function saveGameState() {
+      if (readOnlyMode || !sessionUserKey || !gameState) return false;
+      try {
+        const users = getUsers();
+        if (!users[sessionUserKey]) return false;
+        users[sessionUserKey].character = gameState;
+        localStorage.setItem('ur_users', JSON.stringify(users));
+        return true;
+      } catch (e) {
+        showToast('Não consegui salvar agora.');
+        return false;
+      }
+    }
+
+    function getNextUnlockText() {
+      const missing = SHOP_VISIBLE_ITEMS
+        .filter((item) => !hasShopUnlock(item.key))
+        .sort((a, b) => Number(a.cost || 0) - Number(b.cost || 0));
+      if (!missing.length) return 'Loja concluída';
+      return `${missing[0].title} • ${Number(missing[0].cost || 0).toLocaleString('pt-BR')} 🪙`;
+    }
+
+    function renderPhotoSection() {
+      const unlocked = hasShopUnlock('profilePhoto');
+      const hasPhoto = !!gameState.playerProfilePhoto;
+      if (elements.profilePhotoPreview) {
+        if (hasPhoto) {
+          elements.profilePhotoPreview.src = gameState.playerProfilePhoto;
+          elements.profilePhotoPreview.style.display = 'block';
+        } else {
+          elements.profilePhotoPreview.removeAttribute('src');
+          elements.profilePhotoPreview.style.display = 'none';
+        }
+      }
+      if (elements.profilePhotoHint) {
+        if (!unlocked) {
+          elements.profilePhotoHint.textContent = 'Bloqueado: compre na loja para ativar foto social.';
+        } else if (!hasPhoto) {
+          elements.profilePhotoHint.textContent = 'Desbloqueado: escolha sua foto de perfil social.';
+        } else {
+          elements.profilePhotoHint.textContent = 'Foto social ativa (visível para outros jogadores).';
+        }
+      }
+      if (elements.setProfilePhotoBtn) elements.setProfilePhotoBtn.disabled = readOnlyMode;
+      if (elements.clearProfilePhotoBtn) elements.clearProfilePhotoBtn.disabled = readOnlyMode;
+    }
+
+    function renderHeaderAndWallet() {
+      if (!gameState) return;
+      if (elements.coinsBalance) elements.coinsBalance.textContent = Number(gameState.coins || 0).toLocaleString('pt-BR');
+      if (elements.coinRuleText) elements.coinRuleText.textContent = 'A cada nível ganho: +35 moedas.';
+      if (elements.walletCurrentCoins) elements.walletCurrentCoins.textContent = Number(gameState.coins || 0).toLocaleString('pt-BR');
+      if (elements.walletTotalEarned) elements.walletTotalEarned.textContent = `${Number(gameState.wallet.totalEarned || 0).toLocaleString('pt-BR')} 🪙`;
+      if (elements.walletTotalSpent) elements.walletTotalSpent.textContent = `${Number(gameState.wallet.totalSpent || 0).toLocaleString('pt-BR')} 🪙`;
+      if (elements.walletPurchaseCount) elements.walletPurchaseCount.textContent = Number(gameState.wallet.purchaseCount || 0).toLocaleString('pt-BR');
+      if (elements.walletNextUnlock) elements.walletNextUnlock.textContent = getNextUnlockText();
+
+      if (elements.walletLastMove) {
+        const move = gameState.wallet || {};
+        if (move.lastAt && Number.isFinite(Date.parse(move.lastAt))) {
+          const sign = move.lastType === 'debit' ? '-' : '+';
+          const reason = String(move.lastReason || 'Movimentação').trim() || 'Movimentação';
+          const date = new Date(move.lastAt).toLocaleString('pt-BR');
+          const amount = Math.max(0, Number(move.lastAmount || 0)).toLocaleString('pt-BR');
+          elements.walletLastMove.textContent = `${sign}${amount} 🪙 • ${reason} • ${date}`;
+        } else {
+          elements.walletLastMove.textContent = 'Sem movimentações ainda.';
+        }
+      }
+
+      if (elements.storePlayerLine) {
+        const name = String(gameState.name || 'Herói');
+        const title = String(gameState.title || 'Viajante');
+        const level = Math.max(1, Number(gameState.level || 1) || 1);
+        elements.storePlayerLine.textContent = `Jogador: ${name} • Título: ${title} • Nível: ${level}`;
+      }
+
+      if (elements.storeWarning) {
+        if (readOnlyMode) {
+          elements.storeWarning.classList.remove('hidden');
+          elements.storeWarning.textContent = 'Nenhuma sessão ativa encontrada. Faça login no jogo principal para comprar itens.';
+        } else {
+          elements.storeWarning.classList.add('hidden');
+          elements.storeWarning.textContent = '';
+        }
+      }
+    }
+
+    function updateCloudSyncStatus(text = 'Nuvem: não verificada.') {
+      if (!elements.cloudSyncStatus) return;
+      elements.cloudSyncStatus.textContent = String(text || 'Nuvem: não verificada.');
+    }
+
+    async function purchaseShopItem(itemKey = '') {
+      if (readOnlyMode) {
+        showToast('Entre no jogo principal para usar a loja.');
+        return false;
+      }
+      const item = SHOP_ITEMS.find((entry) => entry.key === itemKey);
+      if (!item) return false;
+      if (!isShopItemVisible(item)) {
+        showToast('Esse item não está mais disponível na loja.');
+        return false;
+      }
+      if (hasShopUnlock(item.key)) {
+        showToast('Esse item já está desbloqueado.');
+        return false;
+      }
+      const cost = Math.max(0, Number(item.cost || 0) || 0);
+      const currentCoins = Math.max(0, Number(gameState.coins || 0) || 0);
+      if (currentCoins < cost) {
+        showToast(`Moedas insuficientes. Necessário: ${cost.toLocaleString('pt-BR')} 🪙`);
+        return false;
+      }
+
+      gameState.coins = currentCoins - cost;
+      gameState.shopUnlocks[item.key] = true;
+      gameState.wallet.totalSpent = Math.max(0, Number(gameState.wallet.totalSpent || 0) + cost);
+      gameState.wallet.purchaseCount = Math.max(0, Number(gameState.wallet.purchaseCount || 0) + 1);
+      gameState.wallet.lastAmount = cost;
+      gameState.wallet.lastType = 'debit';
+      gameState.wallet.lastReason = `Compra: ${item.title}`.slice(0, 120);
+      gameState.wallet.lastAt = new Date().toISOString();
+      const eventBonus = applyShopSpecialEventPurchaseBonus(item.key);
+
+      if (item.key === 'legendTitle') {
+        const currentTitle = String(gameState.title || '').trim();
+        if (!currentTitle || currentTitle === 'Viajante') {
+          gameState.title = 'Lenda do Reino';
+        }
+      } else if (item.key === 'tituloEstrategista') {
+        const currentTitle = String(gameState.title || '').trim();
+        if (!currentTitle || currentTitle === 'Viajante') {
+          gameState.title = 'Estrategista';
+        }
+      } else if (item.key === 'tituloVisionario') {
+        const currentTitle = String(gameState.title || '').trim();
+        if (!currentTitle || currentTitle === 'Viajante') {
+          gameState.title = 'Visionário';
+        }
+      }
+
+      saveGameState();
+      renderPage();
+
+      let purchaseMessage = '';
+      if (item.key === 'profilePhoto') {
+        purchaseMessage = 'Foto social liberada. Agora escolha uma foto.';
+      } else if (item.key === 'nameMotion') {
+        purchaseMessage = 'Nome em movimento ativado! Seu nome ficará animado na sala.';
+      } else if (item.key === 'tituloEstrategista') {
+        purchaseMessage = 'Estratégia ativa: +10% XP ao concluir tarefas.';
+      } else if (item.key === 'tituloVisionario') {
+        purchaseMessage = 'Visão ativa: +10 XP e +1 ponto na recompensa diária.';
+      } else if (item.key === 'taskMastery') {
+        purchaseMessage = 'Maestria ativa: tarefas com +30% XP.';
+      } else if (item.key === 'dailyBooster') {
+        purchaseMessage = 'Bênção diária ativa: recompensa diária +15 XP.';
+      } else if (item.key === 'emblemaSabedoria') {
+        purchaseMessage = 'Sabedoria ativa: recompensa diária com +8 XP.';
+      } else if (item.key === 'emblemaLealdade') {
+        purchaseMessage = 'Lealdade ativa: recompensa diária com +8 moedas.';
+      } else if (item.key === 'cofreDiamante') {
+        purchaseMessage = 'Cofre Diamante ativo: +20% em moedas recebidas.';
+      } else if (item.key === 'cinemaRoom') {
+        purchaseMessage = 'Sala Cinema Premium liberada no app principal.';
+      } else {
+        purchaseMessage = `${item.title} desbloqueado com sucesso.`;
+      }
+      if (eventBonus?.coinsBonus > 0) {
+        purchaseMessage += ` 🎉 ${eventBonus.event.label}: cashback +${Number(eventBonus.coinsBonus || 0).toLocaleString('pt-BR')} 🪙`;
+      }
+      showToast(purchaseMessage || `${item.title} desbloqueado com sucesso.`);
+      return true;
+    }
+
+    function renderShopList() {
+      if (!elements.shopList || !gameState) return;
+      elements.shopList.innerHTML = '';
+      SHOP_VISIBLE_ITEMS.forEach((item) => {
+        const unlocked = hasShopUnlock(item.key);
+        const cost = Math.max(0, Number(item.cost || 0) || 0);
+        const currentCoins = Math.max(0, Number(gameState.coins || 0) || 0);
+        const canBuy = !readOnlyMode && !unlocked && currentCoins >= cost;
+        const missing = Math.max(0, cost - currentCoins);
+
+        const row = document.createElement('div');
+        row.className = `shop-item ${unlocked ? 'unlocked' : ''}`.trim();
+
+        const art = document.createElement('div');
+        art.className = 'shop-item-art';
+        art.textContent = item.emoji || '🪙';
+        if (item.badge) {
+          const badge = document.createElement('span');
+          badge.className = 'shop-item-badge';
+          badge.textContent = item.badge;
+          art.appendChild(badge);
+        }
+
+        const main = document.createElement('div');
+        main.className = 'shop-item-main';
+        const title = document.createElement('div');
+        title.className = 'shop-item-title';
+        title.textContent = item.title;
+        const desc = document.createElement('div');
+        desc.className = 'shop-item-desc';
+        desc.textContent = item.description;
+        main.appendChild(title);
+        main.appendChild(desc);
+        const eventCfg = getShopSpecialEvent(item.key);
+        if (eventCfg) {
+          const eventLine = document.createElement('div');
+          eventLine.className = 'shop-item-event';
+          eventLine.textContent = `🎉 Evento: ${eventCfg.label} • ${eventCfg.description}`;
+          main.appendChild(eventLine);
+        }
+        const abilityText = getShopItemAbilityText(item);
+        if (abilityText) {
+          const ability = document.createElement('div');
+          ability.className = 'shop-item-ability';
+          ability.textContent = abilityText;
+          main.appendChild(ability);
+        }
+
+        const priceStack = document.createElement('div');
+        priceStack.className = 'shop-price-stack';
+        const priceLabel = document.createElement('div');
+        priceLabel.className = 'shop-cost-label';
+        priceLabel.textContent = unlocked ? 'Item ativo' : 'Custo';
+        const costNode = document.createElement('div');
+        costNode.className = 'shop-cost';
+        costNode.textContent = unlocked ? 'Desbloqueado' : `${cost.toLocaleString('pt-BR')} 🪙`;
+        priceStack.appendChild(priceLabel);
+        priceStack.appendChild(costNode);
+
+        const buyBtn = document.createElement('button');
+        buyBtn.type = 'button';
+        buyBtn.className = `ghost shop-buy-btn ${unlocked ? 'unlocked' : ''}`.trim();
+        if (unlocked) {
+          buyBtn.textContent = 'Equipado';
+          buyBtn.disabled = true;
+        } else if (readOnlyMode) {
+          buyBtn.textContent = 'Entrar no jogo';
+          buyBtn.disabled = true;
+        } else if (canBuy) {
+          buyBtn.textContent = 'Comprar';
+          buyBtn.disabled = false;
+        } else {
+          buyBtn.textContent = `Faltam ${missing.toLocaleString('pt-BR')} 🪙`;
+          buyBtn.disabled = true;
+        }
+        buyBtn.addEventListener('click', () => {
+          purchaseShopItem(item.key).catch(() => {
+            showToast('Não consegui concluir a compra agora.');
+          });
+        });
+
+        row.appendChild(art);
+        row.appendChild(main);
+        row.appendChild(priceStack);
+        row.appendChild(buyBtn);
+        elements.shopList.appendChild(row);
+      });
+    }
+
+    async function readAndCompressImageFile(file, { maxWidth = 700, maxHeight = 700, quality = 0.78 } = {}) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const ratio = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
+            const width = Math.max(1, Math.round(img.width * ratio));
+            const height = Math.max(1, Math.round(img.height * ratio));
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              reject(new Error('canvas'));
+              return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            let q = Math.max(0.45, Math.min(0.92, Number(quality) || 0.78));
+            let dataUrl = canvas.toDataURL('image/jpeg', q);
+            while (dataUrl.length > MAX_PLAYER_PROFILE_PHOTO_DATA_URL_LENGTH && q > 0.45) {
+              q = Math.max(0.45, q - 0.06);
+              dataUrl = canvas.toDataURL('image/jpeg', q);
+              if (q <= 0.45) break;
+            }
+            resolve(dataUrl);
+          };
+          img.onerror = () => reject(new Error('image'));
+          img.src = String(reader.result || '');
+        };
+        reader.onerror = () => reject(new Error('reader'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function handleProfilePhotoChange(event) {
+      const file = event?.target?.files && event.target.files[0];
+      if (!file) return;
+      if (readOnlyMode) {
+        showToast('Entre no jogo principal para alterar foto.');
+        return;
+      }
+      if (!hasShopUnlock('profilePhoto')) {
+        showToast('Desbloqueie "Foto de Perfil Social" na loja primeiro.');
+        return;
+      }
+      try {
+        const dataUrl = await readAndCompressImageFile(file);
+        if (!String(dataUrl || '').startsWith('data:image/') || dataUrl.length > MAX_PLAYER_PROFILE_PHOTO_DATA_URL_LENGTH) {
+          showToast('Imagem muito grande. Tente outra foto.');
+          return;
+        }
+        gameState.playerProfilePhoto = dataUrl;
+        saveGameState();
+        renderPage();
+        showToast('Foto social atualizada com sucesso.');
+      } catch (e) {
+        showToast('Falha ao processar a imagem.');
+      } finally {
+        if (elements.profilePhotoInput) elements.profilePhotoInput.value = '';
+      }
+    }
+
+    function clearProfilePhoto() {
+      if (readOnlyMode) {
+        showToast('Entre no jogo principal para alterar foto.');
+        return;
+      }
+      if (!hasShopUnlock('profilePhoto')) {
+        showToast('Recurso de foto social ainda bloqueado.');
+        return;
+      }
+      gameState.playerProfilePhoto = null;
+      saveGameState();
+      renderPage();
+      showToast('Foto social removida.');
+    }
+
+    function openProfilePhotoPicker() {
+      if (readOnlyMode) {
+        showToast('Entre no jogo principal para alterar foto.');
+        return;
+      }
+      if (!hasShopUnlock('profilePhoto')) {
+        showToast('Desbloqueie "Foto de Perfil Social" na loja primeiro.');
+        return;
+      }
+      if (elements.profilePhotoInput) {
+        elements.profilePhotoInput.value = '';
+        elements.profilePhotoInput.click();
+      }
+    }
+
+    function renderPage() {
+      renderHeaderAndWallet();
+      renderPhotoSection();
+      renderShopList();
+    }
+
+    async function syncCloudNow() {
+      if (readOnlyMode) {
+        showToast('Faça login no jogo principal antes de sincronizar.');
+        updateCloudSyncStatus('Nuvem: sem sessão local ativa.');
+        return;
+      }
+
+      if (!window.SupabaseService) {
+        showToast('Serviço de nuvem não disponível nesta página.');
+        updateCloudSyncStatus('Nuvem: serviço indisponível.');
+        return;
+      }
+
+      if (elements.syncCloudBtn) elements.syncCloudBtn.disabled = true;
+      updateCloudSyncStatus('Nuvem: sincronizando...');
+      showToast('Sincronizando com a nuvem...');
+
+      try {
+        if (typeof window.SupabaseService.init === 'function') {
+          window.SupabaseService.init();
+        }
+      } catch (e) {}
+
+      try {
+        if (typeof window.SupabaseService.isConfigured !== 'function' || !window.SupabaseService.isConfigured()) {
+          updateCloudSyncStatus('Nuvem: configuração não encontrada.');
+          showToast('Nuvem não configurada no app.');
+          return;
+        }
+
+        if (typeof window.SupabaseService.getSession === 'function') {
+          await window.SupabaseService.getSession();
+        }
+
+        if (typeof window.SupabaseService.syncAllToCloud !== 'function') {
+          updateCloudSyncStatus('Nuvem: método de sync indisponível.');
+          showToast('Sync de nuvem indisponível.');
+          return;
+        }
+
+        saveGameState();
+        const ok = await window.SupabaseService.syncAllToCloud(gameState);
+        if (ok) {
+          const now = new Date().toLocaleString('pt-BR');
+          updateCloudSyncStatus(`Nuvem: sincronizado em ${now}.`);
+          showToast('Sincronização com nuvem concluída.');
+        } else {
+          updateCloudSyncStatus('Nuvem: falha ao sincronizar.');
+          showToast('Não consegui sincronizar com a nuvem.');
+        }
+      } catch (e) {
+        updateCloudSyncStatus('Nuvem: erro na sincronização.');
+        showToast('Erro ao sincronizar agora.');
+      } finally {
+        if (elements.syncCloudBtn) elements.syncCloudBtn.disabled = false;
+      }
+    }
+
+    function bindEvents() {
+      if (elements.refreshBtn) {
+        elements.refreshBtn.addEventListener('click', () => {
+          loadGameState();
+          renderPage();
+          showToast('Loja atualizada com os dados mais recentes.');
+        });
+      }
+      if (elements.setProfilePhotoBtn) {
+        elements.setProfilePhotoBtn.addEventListener('click', openProfilePhotoPicker);
+      }
+      if (elements.clearProfilePhotoBtn) {
+        elements.clearProfilePhotoBtn.addEventListener('click', clearProfilePhoto);
+      }
+      if (elements.profilePhotoInput) {
+        elements.profilePhotoInput.addEventListener('change', handleProfilePhotoChange);
+      }
+      if (elements.syncCloudBtn) {
+        elements.syncCloudBtn.addEventListener('click', () => {
+          syncCloudNow().catch(() => {
+            updateCloudSyncStatus('Nuvem: erro inesperado.');
+            showToast('Falha inesperada na sincronização.');
+          });
+        });
+      }
+      window.addEventListener('storage', () => {
+        loadGameState();
+        renderPage();
+      });
+    }
+
+    loadGameState();
+    bindEvents();
+    renderPage();
+    updateCloudSyncStatus('Nuvem: pronta para sincronizar.');
+  </script>
+</body>
+</html>
+

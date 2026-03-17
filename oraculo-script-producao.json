@@ -1,0 +1,355 @@
+{
+  "nome": "Oraculo Producao v2",
+  "facts": [
+    "Este script foi criado para comandos de uso diario no Universo Real.",
+    "Os atalhos comecam com a palavra atalho para evitar acionamento acidental."
+  ],
+  "commands": [
+    {
+      "trigger": "menu atalhos",
+      "response": {
+        "message": "Escolha uma area para ver os comandos:",
+        "cards": [
+          {
+            "title": "Financas",
+            "description": "Gastos, ganhos, resumo e metas.",
+            "command": "atalho financas"
+          },
+          {
+            "title": "Tarefas",
+            "description": "Criar, listar e concluir tarefas.",
+            "command": "atalho tarefas"
+          },
+          {
+            "title": "Trabalho",
+            "description": "Iniciar/parar timer e ver resumo.",
+            "command": "atalho trabalho"
+          },
+          {
+            "title": "Biblia",
+            "description": "Atalhos para estudo biblico.",
+            "command": "atalho biblia"
+          },
+          {
+            "title": "Zen",
+            "description": "Comandos e fluxo do modo zen.",
+            "command": "atalho zen"
+          },
+          {
+            "title": "Perfil",
+            "description": "Memoria, status e dados do usuario.",
+            "command": "atalho perfil"
+          },
+          {
+            "title": "Seguranca",
+            "description": "Bloqueio e recuperacao de acesso.",
+            "command": "atalho seguranca"
+          },
+          {
+            "title": "Voz",
+            "description": "Uso do microfone e leitura em voz.",
+            "command": "atalho voz"
+          },
+          {
+            "title": "Rotina",
+            "description": "Sequencia recomendada do dia.",
+            "command": "atalho rotina"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho financas",
+      "response": {
+        "message": "Atalhos de financas:",
+        "cards": [
+          {
+            "title": "Registrar gasto",
+            "description": "Exemplo: gastei 50 no mercado",
+            "command": "atalho comando gasto"
+          },
+          {
+            "title": "Registrar ganho",
+            "description": "Exemplo: recebi 1200 de salario",
+            "command": "atalho comando ganho"
+          },
+          {
+            "title": "Resumo financeiro",
+            "description": "Mostra saldo e movimentos",
+            "command": "resumo financeiro"
+          },
+          {
+            "title": "Analisar gastos",
+            "description": "Mostra analise por categoria",
+            "command": "analisar gastos"
+          },
+          {
+            "title": "Meta financeira",
+            "description": "Criacao guiada de meta",
+            "command": "atalho comando meta"
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho tarefas",
+      "response": {
+        "message": "Atalhos de tarefas:",
+        "cards": [
+          {
+            "title": "Criar tarefa",
+            "description": "Exemplo: criar tarefa estudar ingles",
+            "command": "atalho comando tarefa"
+          },
+          {
+            "title": "Listar tarefas",
+            "description": "Mostra tarefas abertas",
+            "command": "quais sao minhas tarefas"
+          },
+          {
+            "title": "Concluir tarefa",
+            "description": "Exemplo: completar tarefa estudar ingles",
+            "command": "atalho comando concluir tarefa"
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho trabalho",
+      "response": {
+        "message": "Atalhos de trabalho:",
+        "cards": [
+          {
+            "title": "Iniciar trabalho",
+            "description": "Comeca o timer de trabalho",
+            "command": "iniciar trabalho"
+          },
+          {
+            "title": "Parar trabalho",
+            "description": "Finaliza o timer de trabalho",
+            "command": "parar trabalho"
+          },
+          {
+            "title": "Resumo de hoje",
+            "description": "Mostra o resumo do trabalho",
+            "command": "como foi meu trabalho hoje"
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho biblia",
+      "response": {
+        "message": "Atalhos biblicos:",
+        "cards": [
+          {
+            "title": "Versiculo do dia",
+            "description": "Mostra um versiculo para hoje",
+            "command": "versiculo do dia"
+          },
+          {
+            "title": "Explicar passagem",
+            "description": "Exemplo: explica joao 3 16",
+            "command": "explica joao 3 16"
+          },
+          {
+            "title": "Anotar estudo",
+            "description": "Abre fluxo para anotacoes",
+            "command": "anotar estudo biblico"
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho zen",
+      "response": {
+        "message": "Atalhos do modo zen:",
+        "cards": [
+          {
+            "title": "Abrir modo zen",
+            "description": "Use a aba Social para iniciar",
+            "response": "Abra a aba Social e toque em Modo Zen."
+          },
+          {
+            "title": "Sair do modo zen",
+            "description": "Encerrar exibicao atual",
+            "response": "No modo zen, toque em Sair do Modo Casal."
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho perfil",
+      "response": {
+        "message": "Atalhos de perfil e memoria:",
+        "cards": [
+          {
+            "title": "Meu status",
+            "description": "Mostra nivel e progresso",
+            "command": "qual meu status"
+          },
+          {
+            "title": "O que voce sabe sobre mim",
+            "description": "Mostra memoria atual",
+            "command": "o que voce sabe sobre mim"
+          },
+          {
+            "title": "Limpar memoria",
+            "description": "Apaga memorias do oraculo",
+            "command": "limpar memoria"
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho seguranca",
+      "response": {
+        "message": "Atalhos de seguranca:",
+        "cards": [
+          {
+            "title": "Configurar bloqueio",
+            "description": "Ative ou desative nas configuracoes",
+            "response": "Abra Configuracoes e ajuste o bloqueio da conta."
+          },
+          {
+            "title": "Recuperar acesso",
+            "description": "Use pergunta/resposta de seguranca",
+            "response": "Se esquecer a senha, use a pergunta de seguranca para recuperar."
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho voz",
+      "response": {
+        "message": "Atalhos de voz:",
+        "cards": [
+          {
+            "title": "Ativar leitura por voz",
+            "description": "Oraculo passa a ler as respostas",
+            "command": "ativar modo palavras"
+          },
+          {
+            "title": "Desativar leitura por voz",
+            "description": "Respostas voltam para texto normal",
+            "command": "desativar modo palavras"
+          },
+          {
+            "title": "Dica de microfone",
+            "description": "Uso rapido do botao de voz",
+            "response": "Toque uma vez no microfone para falar."
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho rotina",
+      "response": {
+        "message": "Escolha uma etapa da rotina:",
+        "cards": [
+          {
+            "title": "Etapa 1: Status",
+            "description": "Ver progresso geral",
+            "command": "qual meu status"
+          },
+          {
+            "title": "Etapa 2: Tarefas",
+            "description": "Revisar tarefas do dia",
+            "command": "quais sao minhas tarefas"
+          },
+          {
+            "title": "Etapa 3: Financas",
+            "description": "Checar saldo e gastos",
+            "command": "resumo financeiro"
+          },
+          {
+            "title": "Etapa 4: Trabalho",
+            "description": "Checar atividade do trabalho",
+            "command": "como foi meu trabalho hoje"
+          },
+          {
+            "title": "Etapa 5: Revisao noturna",
+            "description": "Fechamento rapido do dia",
+            "response": "Revise o que concluiu hoje e ajuste as 3 prioridades de amanha."
+          },
+          {
+            "title": "Voltar ao menu",
+            "description": "Retorna para os atalhos principais",
+            "command": "menu atalhos"
+          }
+        ]
+      }
+    },
+    {
+      "trigger": "atalho comando gasto",
+      "response": "Modelo rapido de gasto: \"gastei VALOR em DESCRICAO\". Exemplo: \"gastei 42 no uber\"."
+    },
+    {
+      "trigger": "atalho comando ganho",
+      "response": "Modelo rapido de ganho: \"recebi VALOR de DESCRICAO\". Exemplo: \"recebi 350 de freelance\"."
+    },
+    {
+      "trigger": "atalho comando tarefa",
+      "response": "Modelo rapido de tarefa: \"criar tarefa NOME_DA_TAREFA\". Exemplo: \"criar tarefa estudar API\"."
+    },
+    {
+      "trigger": "atalho comando concluir tarefa",
+      "response": "Modelo para concluir: \"completar tarefa NOME_DA_TAREFA\"."
+    },
+    {
+      "trigger": "atalho comando trabalho",
+      "response": "Modelo rapido de trabalho: \"iniciar trabalho\" para comecar e \"parar trabalho\" para finalizar."
+    },
+    {
+      "trigger": "atalho comando meta",
+      "response": "Modelo de meta: \"criar meta financeira\" e depois informe valor e objetivo."
+    }
+  ],
+  "responses": {
+    "bom dia oraculo": "Bom dia. Se quiser, digite \"menu atalhos\" para ver os comandos principais.",
+    "check rapido": "Check rapido: tarefas, financas e trabalho estao disponiveis. Use \"menu atalhos\".",
+    "socorro comandos": "Sem problema. Digite \"menu atalhos\" e eu te guio.",
+    "socorro script": "Sem problema. Digite \"menu atalhos\" e eu te guio.",
+    "socorro scripts": "Sem problema. Digite \"menu atalhos\" e eu te guio."
+  }
+}

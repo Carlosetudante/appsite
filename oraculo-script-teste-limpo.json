@@ -1,0 +1,17 @@
+{
+  "nome": "Script de Teste Limpo",
+  "commands": [
+    {
+      "trigger": "teste comando oraculo",
+      "response": "Comando customizado funcionando com sucesso."
+    },
+    {
+      "trigger": "ativar modo teste",
+      "response": "Modo teste ativado."
+    },
+    {
+      "trigger": "status do script teste",
+      "response": "Script de teste carregado e operando normalmente."
+    }
+  ]
+}
