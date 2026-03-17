@@ -1,0 +1,135 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #2d333b;
+  --text: #e6edf3;
+  --muted: #9ba7b4;
+  --primary: #2f81f7;
+  --primary-2: #1f6feb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: var(--text);
+  background: radial-gradient(1200px 600px at 50% -10%, #1b2636 0%, var(--bg) 60%);
+}
+
+.container {
+  width: min(920px, 100% - 28px);
+  margin: 28px auto 36px;
+  display: grid;
+  gap: 14px;
+}
+
+.hero {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.badge {
+  margin: 0 0 10px;
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8bd5ff;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: clamp(26px, 4vw, 36px);
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.meta {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.meta p {
+  margin: 0;
+}
+
+.actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 15px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn.primary {
+  background: linear-gradient(180deg, var(--primary), var(--primary-2));
+  color: #fff;
+  font-weight: 700;
+}
+
+.btn.ghost {
+  background: #21262d;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.status {
+  margin: 12px 0 0;
+  color: #cfe7ff;
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.list {
+  margin: 0;
+  padding-left: 18px;
+  color: #d6dee8;
+  display: grid;
+  gap: 8px;
+}
+
+.list.numbered {
+  padding-left: 22px;
+}
+
+code {
+  background: #21262d;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
