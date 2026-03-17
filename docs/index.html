@@ -1,49 +1,68 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Download do App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1f32">
+  <title>Universo Real | Baixar App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./style.css">
   <script defer src="./app.js"></script>
 </head>
 <body>
-  <main class="container">
-    <header class="hero">
-      <p class="badge">Download Oficial</p>
+  <div class="bg-glow bg-glow-a"></div>
+  <div class="bg-glow bg-glow-b"></div>
+
+  <main class="page">
+    <section class="hero card">
+      <p class="chip">DOWNLOAD OFICIAL</p>
       <h1 id="appName">Universo Real</h1>
       <p id="subtitle" class="subtitle">Baixe a versao mais recente do aplicativo.</p>
-    </header>
 
-    <section class="card">
-      <div class="meta">
-        <p id="versionLine">Versao: --</p>
-        <p id="dateLine">Atualizado em: --</p>
+      <div class="hero-meta">
+        <div class="meta-pill" id="versionLine">Versao: --</div>
+        <div class="meta-pill" id="dateLine">Atualizado em: --</div>
       </div>
 
       <div class="actions">
-        <a id="downloadBtn" class="btn primary" href="#" download>Baixar APK</a>
-        <button id="copyBtn" class="btn ghost" type="button">Copiar Link</button>
+        <a id="downloadBtn" class="btn btn-primary" href="#" download>
+          <span class="btn-icon">⬇</span>
+          <span>Baixar APK</span>
+        </a>
+        <button id="copyBtn" class="btn btn-ghost" type="button">
+          <span class="btn-icon">🔗</span>
+          <span>Copiar Link</span>
+        </button>
       </div>
 
       <p id="statusLine" class="status">Configure o arquivo <code>config.json</code>.</p>
       <p id="platformHint" class="hint"></p>
     </section>
 
-    <section class="card">
-      <h2>Novidades</h2>
-      <ul id="changelogList" class="list"></ul>
+    <section class="grid">
+      <article class="card panel">
+        <h2>Novidades desta versao</h2>
+        <ul id="changelogList" class="list"></ul>
+      </article>
+
+      <article class="card panel">
+        <h2>Como instalar no Android</h2>
+        <ol class="list numbered">
+          <li>Toque em <strong>Baixar APK</strong>.</li>
+          <li>Abra o arquivo baixado.</li>
+          <li>Permita instalar apps dessa fonte, se solicitado.</li>
+          <li>Conclua a instalacao e abra o app.</li>
+        </ol>
+      </article>
     </section>
 
-    <section class="card">
-      <h2>Como instalar no Android</h2>
-      <ol class="list numbered">
-        <li>Toque em <strong>Baixar APK</strong>.</li>
-        <li>Abra o arquivo baixado.</li>
-        <li>Se pedir permissao, permita instalar apps dessa fonte.</li>
-        <li>Conclua a instalacao normalmente.</li>
-      </ol>
-    </section>
+    <footer class="footer">
+      <span>Universo Real</span>
+      <span class="dot">•</span>
+      <span>Pagina oficial de distribuicao</span>
+    </footer>
   </main>
 </body>
 </html>
