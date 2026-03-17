@@ -33,6 +33,7 @@ window.OracleConfig = window.OracleConfig || {
   movieApiLanguage: 'pt-BR',
   movieApiRegion: 'BR',
   movieApiKey: '',
+  appShareUrl: 'https://carlosetudante.github.io/appsite/',
   telemetry: true,        // liga log básico
   telemetrySample: 1.0    // 1.0 = logar tudo, 0.2 = 20%
 };
@@ -2746,8 +2747,12 @@ const PLAYER_ROOM_MEDIA_KINDS = Object.freeze(new Set([
   'call'
 ]));
 const PLAYER_ROOM_SPECIAL_KINDS = Object.freeze(new Set([
-  'poker_invite'
+  'poker_invite',
+  'admin_news'
 ]));
+const PLAYER_ROOM_ADMIN_NEWS_KIND = 'admin_news';
+const PLAYER_ROOM_ADMIN_NEWS_TTL_MS = 24 * 60 * 60 * 1000;
+const PLAYER_ROOM_ADMIN_NEWS_MAX_ITEMS = 120;
 const PLAYER_ROOM_MAX_MEDIA_BYTES = 850 * 1024;
 const PLAYER_ROOM_MAX_VIDEO_BYTES = 2 * 1024 * 1024;
 const PLAYER_ROOM_MAX_AUDIO_MS = 25000;
@@ -2906,6 +2911,7 @@ const POKER_CHIP_EXCHANGE = Object.freeze({
   coins: 70,
   label: 'Troca de fichas'
 });
+const POKER_ROBOT_COIN_EXCHANGE_LIMIT = 1000;
 const POKER_ONLINE_DEFAULT_STACK = 1000;
 const ARENA_ROOM_NAME = 'global';
 const ARENA_DUEL_ENABLED = false;
@@ -3575,6 +3581,9 @@ const elements = {
   adminUserDeleteBtn: document.getElementById('adminUserDeleteBtn'),
   adminUserClearSelectionBtn: document.getElementById('adminUserClearSelectionBtn'),
   adminUsersCloseBtn: document.getElementById('adminUsersCloseBtn'),
+  adminNewsInput: document.getElementById('adminNewsInput'),
+  adminNewsSendBtn: document.getElementById('adminNewsSendBtn'),
+  adminNewsStatus: document.getElementById('adminNewsStatus'),
   watchTemplateList: document.getElementById('watchTemplateList'),
   watchTemplatePreviewConnection: document.getElementById('watchTemplatePreviewConnection'),
   watchTemplatePreviewLayout: document.getElementById('watchTemplatePreviewLayout'),
@@ -3746,6 +3755,11 @@ const elements = {
   playerRoomExtrasToggleBtn: document.getElementById('playerRoomExtrasToggleBtn'),
   playerRoomReconnectBtn: document.getElementById('playerRoomReconnectBtn'),
   playerRoomClearBtn: document.getElementById('playerRoomClearBtn'),
+  playerRoomNewsInboxBtn: document.getElementById('playerRoomNewsInboxBtn'),
+  playerRoomNewsInboxHint: document.getElementById('playerRoomNewsInboxHint'),
+  adminNewsInboxModal: document.getElementById('adminNewsInboxModal'),
+  adminNewsInboxList: document.getElementById('adminNewsInboxList'),
+  adminNewsInboxCloseBtn: document.getElementById('adminNewsInboxCloseBtn'),
   playerNofapDays: document.getElementById('playerNofapDays'),
   playerNofapSince: document.getElementById('playerNofapSince'),
   playerNofapBest: document.getElementById('playerNofapBest'),
@@ -3964,6 +3978,299 @@ function getPlayerRoomAvatar() {
     }
   } catch (e) {}
   return '🧑';
+}
+
+function sanitizeAdminNewsText(value, maxLen = 260) {
+  return String(value ?? '')
+    .replace(/\r/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, Math.max(10, Number(maxLen) || 260));
+}
+
+function normalizeAdminNewsIso(value, fallback = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return String(fallback || '').trim();
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return String(fallback || '').trim();
+  return new Date(ms).toISOString();
+}
+
+function isPlayerRoomAdminNewsMessage(message = {}) {
+  return String(message?.kind || '').trim().toLowerCase() === PLAYER_ROOM_ADMIN_NEWS_KIND;
+}
+
+function isPlayerRoomAdminNewsExpiredMessage(message = {}, nowMs = Date.now()) {
+  if (!isPlayerRoomAdminNewsMessage(message)) return false;
+  const createdAtMs = Date.parse(String(message?.createdAt || '').trim());
+  const fallbackExpires = Number.isFinite(createdAtMs)
+    ? new Date(createdAtMs + PLAYER_ROOM_ADMIN_NEWS_TTL_MS).toISOString()
+    : '';
+  const expiresAt = normalizeAdminNewsIso(message?.adminNewsExpiresAt, fallbackExpires);
+  const expiresMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresMs)) return false;
+  return expiresMs <= nowMs;
+}
+
+function normalizeAdminNewsInboxEntry(entry = {}) {
+  const source = entry && typeof entry === 'object' ? entry : {};
+  const text = sanitizeAdminNewsText(source.text || source.message || '');
+  if (!text) return null;
+
+  const createdAt = normalizeAdminNewsIso(source.createdAt || source.sentAt, new Date().toISOString());
+  const createdMs = Date.parse(createdAt);
+  const fallbackExpires = Number.isFinite(createdMs)
+    ? new Date(createdMs + PLAYER_ROOM_ADMIN_NEWS_TTL_MS).toISOString()
+    : new Date(Date.now() + PLAYER_ROOM_ADMIN_NEWS_TTL_MS).toISOString();
+  const expiresAt = normalizeAdminNewsIso(
+    source.expiresAt || source.adminNewsExpiresAt,
+    fallbackExpires
+  );
+  const id = String(
+    source.id ||
+    `news-${Date.parse(createdAt) || Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  ).trim().slice(0, 100);
+
+  return {
+    id: id || `news-${Date.now()}`,
+    text,
+    senderId: String(source.senderId || source.userId || '').trim().slice(0, 120),
+    senderName: String(source.senderName || source.username || 'Admin').trim().slice(0, 60) || 'Admin',
+    createdAt,
+    expiresAt,
+    readAt: normalizeAdminNewsIso(source.readAt, '')
+  };
+}
+
+function getAdminNewsInboxListFromState(state = gameState) {
+  if (!state || typeof state !== 'object') return [];
+  const source = Array.isArray(state.adminNewsInbox) ? state.adminNewsInbox : [];
+  const nowMs = Date.now();
+  const map = new Map();
+
+  source.forEach((entry) => {
+    const normalized = normalizeAdminNewsInboxEntry(entry);
+    if (!normalized) return;
+    const expiresMs = Date.parse(normalized.expiresAt || '');
+    if (Number.isFinite(expiresMs) && expiresMs <= nowMs) return;
+    const dedupeKey = String(normalized.id || '').trim() || `${normalized.senderId}|${normalized.createdAt}|${normalized.text}`;
+    const prev = map.get(dedupeKey);
+    if (!prev) {
+      map.set(dedupeKey, normalized);
+      return;
+    }
+    const prevMs = Date.parse(prev.createdAt || '');
+    const nextMs = Date.parse(normalized.createdAt || '');
+    if (!Number.isFinite(prevMs) || (Number.isFinite(nextMs) && nextMs > prevMs)) {
+      map.set(dedupeKey, normalized);
+    }
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0))
+    .slice(0, PLAYER_ROOM_ADMIN_NEWS_MAX_ITEMS);
+}
+
+function setAdminNewsInboxList(nextList = [], { persist = false, silent = true } = {}) {
+  if (!gameState || typeof gameState !== 'object') return;
+  const normalized = (Array.isArray(nextList) ? nextList : [])
+    .map((entry) => normalizeAdminNewsInboxEntry(entry))
+    .filter(Boolean)
+    .slice(0, PLAYER_ROOM_ADMIN_NEWS_MAX_ITEMS);
+  gameState.adminNewsInbox = normalized;
+  updatePlayerRoomNewsInboxHint();
+  if (elements.adminNewsInboxModal?.classList.contains('active')) {
+    renderAdminNewsInboxList();
+  }
+  if (persist && isLoggedIn) {
+    saveGame(!!silent);
+  }
+}
+
+function purgeExpiredAdminNewsInbox({ persist = false, silent = true } = {}) {
+  if (!gameState || typeof gameState !== 'object') return [];
+  const current = getAdminNewsInboxListFromState(gameState);
+  const previousCount = Array.isArray(gameState.adminNewsInbox) ? gameState.adminNewsInbox.length : 0;
+  const changed = previousCount !== current.length;
+  if (changed) {
+    setAdminNewsInboxList(current, { persist, silent });
+  } else {
+    updatePlayerRoomNewsInboxHint();
+  }
+  return current;
+}
+
+function countUnreadAdminNews(state = gameState) {
+  return getAdminNewsInboxListFromState(state).filter((entry) => !String(entry.readAt || '').trim()).length;
+}
+
+function formatAdminNewsTimestamp(value) {
+  const ms = Date.parse(String(value || '').trim());
+  if (!Number.isFinite(ms)) return '--';
+  return new Date(ms).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function renderAdminNewsInboxList() {
+  const listEl = elements.adminNewsInboxList;
+  if (!listEl) return;
+
+  const items = purgeExpiredAdminNewsInbox({ persist: false, silent: true });
+  if (!items.length) {
+    listEl.innerHTML = '<div class="small" style="opacity:.75;">Sem notícias no momento.</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  items.forEach((entry) => {
+    const item = document.createElement('div');
+    item.style.border = '1px solid rgba(255,255,255,0.12)';
+    item.style.borderRadius = '10px';
+    item.style.padding = '10px';
+    item.style.marginBottom = '8px';
+    item.style.background = String(entry.readAt || '').trim()
+      ? 'rgba(255,255,255,0.02)'
+      : 'rgba(255,214,10,0.08)';
+
+    const head = document.createElement('div');
+    head.className = 'small';
+    head.style.opacity = '0.85';
+    head.style.marginBottom = '6px';
+    head.textContent = `${entry.senderName || 'Admin'} • ${formatAdminNewsTimestamp(entry.createdAt)}`;
+
+    const body = document.createElement('div');
+    body.textContent = entry.text || '';
+    body.style.lineHeight = '1.4';
+
+    const foot = document.createElement('div');
+    foot.className = 'small';
+    foot.style.marginTop = '6px';
+    foot.style.opacity = '0.72';
+    foot.textContent = `Expira em: ${formatAdminNewsTimestamp(entry.expiresAt)}`;
+
+    item.appendChild(head);
+    item.appendChild(body);
+    item.appendChild(foot);
+    listEl.appendChild(item);
+  });
+}
+
+function updatePlayerRoomNewsInboxHint() {
+  const total = getAdminNewsInboxListFromState().length;
+  const unread = countUnreadAdminNews();
+  if (elements.playerRoomNewsInboxBtn) {
+    elements.playerRoomNewsInboxBtn.textContent = unread > 0
+      ? `📰 Caixa de notícias (${unread})`
+      : '📰 Caixa de notícias';
+  }
+  if (elements.playerRoomNewsInboxHint) {
+    if (total <= 0) {
+      elements.playerRoomNewsInboxHint.textContent = 'Sem notícias novas.';
+    } else if (unread > 0) {
+      elements.playerRoomNewsInboxHint.textContent = `${unread} notícia(s) nova(s) para você.`;
+    } else {
+      elements.playerRoomNewsInboxHint.textContent = `${total} notícia(s) salva(s) nas últimas 24 horas.`;
+    }
+  }
+}
+
+function openAdminNewsInboxModal() {
+  if (!isLoggedIn || !gameState) {
+    showToast('⚠️ Faça login para abrir a caixa de notícias.');
+    return;
+  }
+  const items = purgeExpiredAdminNewsInbox({ persist: true, silent: true });
+  const nowIso = new Date().toISOString();
+  let changed = false;
+  const marked = items.map((entry) => {
+    if (String(entry.readAt || '').trim()) return entry;
+    changed = true;
+    return { ...entry, readAt: nowIso };
+  });
+  if (changed) {
+    setAdminNewsInboxList(marked, { persist: true, silent: true });
+  }
+
+  renderAdminNewsInboxList();
+  if (elements.adminNewsInboxModal) {
+    elements.adminNewsInboxModal.classList.add('active');
+  }
+}
+
+function closeAdminNewsInboxModal() {
+  if (elements.adminNewsInboxModal) {
+    elements.adminNewsInboxModal.classList.remove('active');
+  }
+}
+
+function setAdminNewsComposerStatus(message, isError = false) {
+  if (!elements.adminNewsStatus) return;
+  const safe = String(message || '').trim();
+  elements.adminNewsStatus.textContent = safe || 'Aguardando envio.';
+  elements.adminNewsStatus.style.color = isError ? '#fecaca' : '';
+}
+
+function upsertAdminNewsInboxEntryFromMessage(message = {}, { persist = true } = {}) {
+  const entry = normalizeAdminNewsInboxEntry({
+    id: message.id,
+    text: message.text,
+    senderId: message.userId,
+    senderName: message.username,
+    createdAt: message.createdAt,
+    adminNewsExpiresAt: message.adminNewsExpiresAt
+  });
+  if (!entry) return { added: false, entry: null };
+  const current = getAdminNewsInboxListFromState(gameState);
+  const idx = current.findIndex((item) => String(item.id || '') === String(entry.id || ''));
+  let added = false;
+  if (idx >= 0) {
+    current[idx] = { ...current[idx], ...entry, readAt: current[idx].readAt || entry.readAt || '' };
+  } else {
+    current.unshift(entry);
+    added = true;
+  }
+  setAdminNewsInboxList(current, { persist, silent: true });
+  return { added, entry };
+}
+
+function syncAdminNewsInboxFromPlayerRoomHistory({ persist = false } = {}) {
+  if (!gameState || !Array.isArray(playerRoomHistory)) {
+    updatePlayerRoomNewsInboxHint();
+    return;
+  }
+  const nowMs = Date.now();
+  const current = getAdminNewsInboxListFromState(gameState);
+  const byId = new Map(current.map((entry) => [String(entry.id || ''), entry]));
+  let changed = false;
+
+  playerRoomHistory.forEach((message) => {
+    if (!isPlayerRoomAdminNewsMessage(message)) return;
+    if (isPlayerRoomAdminNewsExpiredMessage(message, nowMs)) return;
+    const normalized = normalizeAdminNewsInboxEntry({
+      id: message.id,
+      text: message.text,
+      senderId: message.userId,
+      senderName: message.username,
+      createdAt: message.createdAt,
+      adminNewsExpiresAt: message.adminNewsExpiresAt
+    });
+    if (!normalized) return;
+    const key = String(normalized.id || '').trim();
+    if (!key || byId.has(key)) return;
+    byId.set(key, normalized);
+    changed = true;
+  });
+
+  if (!changed) {
+    updatePlayerRoomNewsInboxHint();
+    return;
+  }
+
+  setAdminNewsInboxList(Array.from(byId.values()), { persist, silent: true });
 }
 
 function sanitizePlayerRoomProfile(entry = {}, fallback = {}) {
@@ -6958,6 +7265,19 @@ function normalizePokerChipValue(value, fallback = 0) {
   return Math.floor(parsed);
 }
 
+function normalizePokerRobotCoinsExchanged(value, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return Math.min(POKER_ROBOT_COIN_EXCHANGE_LIMIT, Math.max(0, Number(fallback || 0) || 0));
+  }
+  return Math.min(POKER_ROBOT_COIN_EXCHANGE_LIMIT, Math.round(parsed));
+}
+
+function getPokerRobotCoinExchangeRemaining(ps = ensurePokerState()) {
+  const used = normalizePokerRobotCoinsExchanged(ps?.robotCoinsExchanged, 0);
+  return Math.max(0, POKER_ROBOT_COIN_EXCHANGE_LIMIT - used);
+}
+
 function canStartOfflinePokerHand(ps = ensurePokerState()) {
   const chips = normalizePokerChipValue(ps?.playerChips, 0);
   return chips >= POKER_MIN_BUYIN_CHIPS;
@@ -7080,10 +7400,14 @@ function renderPokerChipStore() {
     const enoughChips = playerChips >= Number(exchangeCfg.chips || 0);
     const inOfflineHand = !!ps.active;
     const inOnlineHand = !!(pokerOnlineMatch && pokerOnlineMatch.status === 'active');
-    const canExchange = enoughChips && !inOfflineHand && !inOnlineHand;
+    const robotCoinsRemaining = getPokerRobotCoinExchangeRemaining(ps);
+    const limitReached = robotCoinsRemaining < Number(exchangeCfg.coins || 0);
+    const canExchange = enoughChips && !inOfflineHand && !inOnlineHand && !limitReached;
     elements.pokerExchangeChipsBtn.disabled = !canExchange;
     elements.pokerExchangeChipsBtn.classList.toggle('insufficient', !canExchange);
-    if (!enoughChips) {
+    if (limitReached) {
+      elements.pokerExchangeChipsBtn.title = `Limite contra robô atingido (${POKER_ROBOT_COIN_EXCHANGE_LIMIT.toLocaleString('pt-BR')} moedas). Fichas extras não podem ser trocadas.`;
+    } else if (!enoughChips) {
       elements.pokerExchangeChipsBtn.title = `Você precisa de ${Number(exchangeCfg.chips || 0).toLocaleString('pt-BR')} fichas para trocar.`;
     } else if (inOfflineHand || inOnlineHand) {
       elements.pokerExchangeChipsBtn.title = 'Finalize a partida atual para trocar fichas por moedas.';
@@ -7094,10 +7418,13 @@ function renderPokerChipStore() {
 
   if (elements.pokerChipStoreHint) {
     const exchangeText = `Troca disponível: ${POKER_CHIP_EXCHANGE.chips.toLocaleString('pt-BR')} fichas -> ${POKER_CHIP_EXCHANGE.coins.toLocaleString('pt-BR')} moedas.`;
-    if (canStartOfflinePokerHand(ps)) {
-      elements.pokerChipStoreHint.textContent = `Você já tem fichas para iniciar a rodada. ${exchangeText}`;
+    const remaining = getPokerRobotCoinExchangeRemaining(ps);
+    if (remaining < Number(POKER_CHIP_EXCHANGE.coins || 0)) {
+      elements.pokerChipStoreHint.textContent = `Limite de moedas no robô atingido (${POKER_ROBOT_COIN_EXCHANGE_LIMIT.toLocaleString('pt-BR')}). Você ainda pode jogar, mas fichas extras não podem virar moedas.`;
+    } else if (canStartOfflinePokerHand(ps)) {
+      elements.pokerChipStoreHint.textContent = `Você já tem fichas para iniciar a rodada. ${exchangeText} Limite restante no robô: ${remaining.toLocaleString('pt-BR')} moedas.`;
     } else {
-      elements.pokerChipStoreHint.textContent = `Compre fichas para jogar. Mínimo para começar: ${POKER_MIN_BUYIN_CHIPS} fichas. ${exchangeText}`;
+      elements.pokerChipStoreHint.textContent = `Compre fichas para jogar. Mínimo para começar: ${POKER_MIN_BUYIN_CHIPS} fichas. ${exchangeText} Limite restante no robô: ${remaining.toLocaleString('pt-BR')} moedas.`;
     }
   }
 }
@@ -7149,6 +7476,12 @@ function exchangePokerChipsForCoins() {
   const requiredChips = Math.max(1, Number(exchangeCfg.chips || 0) || 1000);
   const rewardCoins = Math.max(1, Number(exchangeCfg.coins || 0) || 1);
   const availableChips = normalizePokerChipValue(ps.playerChips, POKER_PLAYER_START_CHIPS);
+  const robotCoinsRemaining = getPokerRobotCoinExchangeRemaining(ps);
+  if (robotCoinsRemaining < rewardCoins) {
+    showToast(`⚠️ Limite de ${POKER_ROBOT_COIN_EXCHANGE_LIMIT.toLocaleString('pt-BR')} moedas contra o robô atingido. Fichas extras não podem ser trocadas.`);
+    renderPokerChipStore();
+    return false;
+  }
   if (availableChips < requiredChips) {
     showToast(`⚠️ Você precisa de ${requiredChips.toLocaleString('pt-BR')} fichas para trocar.`);
     renderPokerChipStore();
@@ -7163,12 +7496,17 @@ function exchangePokerChipsForCoins() {
   wallet.lastType = 'credit';
   wallet.lastReason = `${exchangeCfg.label} (${requiredChips.toLocaleString('pt-BR')} fichas)`;
   wallet.lastAt = new Date().toISOString();
+  ps.robotCoinsExchanged = normalizePokerRobotCoinsExchanged(
+    Number(ps.robotCoinsExchanged || 0) + rewardCoins,
+    0
+  );
 
   persistPokerState();
   saveGame(true);
   updateUI();
   renderArena();
-  showToast(`💱 Troca concluída: -${requiredChips.toLocaleString('pt-BR')} fichas e +${rewardCoins.toLocaleString('pt-BR')} moedas.`);
+  const remainingAfter = getPokerRobotCoinExchangeRemaining(ps);
+  showToast(`💱 Troca concluída: -${requiredChips.toLocaleString('pt-BR')} fichas e +${rewardCoins.toLocaleString('pt-BR')} moedas. Limite restante no robô: ${remainingAfter.toLocaleString('pt-BR')}.`);
   return true;
 }
 
@@ -8404,6 +8742,7 @@ function ensurePokerState() {
       handsPlayed: Math.max(0, Number(saved.handsPlayed || 0) || 0),
       wins: Math.max(0, Number(saved.wins || 0) || 0),
       losses: Math.max(0, Number(saved.losses || 0) || 0),
+      robotCoinsExchanged: normalizePokerRobotCoinsExchanged(saved.robotCoinsExchanged, 0),
       difficulty: normalizePokerDifficulty(saved.difficulty || 'normal'),
       deck: [],
       community: [],
@@ -8441,6 +8780,7 @@ function persistPokerState() {
     handsPlayed: Math.max(0, Number(ps.handsPlayed || 0) || 0),
     wins: Math.max(0, Number(ps.wins || 0) || 0),
     losses: Math.max(0, Number(ps.losses || 0) || 0),
+    robotCoinsExchanged: normalizePokerRobotCoinsExchanged(ps.robotCoinsExchanged, 0),
     difficulty: normalizePokerDifficulty(ps.difficulty || 'normal')
   };
 }
@@ -9787,6 +10127,17 @@ function normalizePlayerRoomMessage(entry = {}) {
   const inviteGame = String(entry.inviteGame || '').trim().toLowerCase().slice(0, 32);
   const inviteTargetTab = String(entry.inviteTargetTab || '').trim().toLowerCase().slice(0, 24);
   const inviteSessionId = String(entry.inviteSessionId || '').trim().slice(0, 80);
+  const adminNewsExpiresAt = normalizeAdminNewsIso(
+    entry.adminNewsExpiresAt,
+    normalizeAdminNewsIso(
+      new Date(
+        (Number.isFinite(Date.parse(String(entry.createdAt || '').trim()))
+          ? Date.parse(String(entry.createdAt || '').trim())
+          : Date.now()
+        ) + PLAYER_ROOM_ADMIN_NEWS_TTL_MS
+      ).toISOString()
+    )
+  );
   const profile = sanitizePlayerRoomProfile(entry.profile, {
     userId: String(entry.userId || '').trim().slice(0, 120),
     name: String(entry.username || 'Jogador').trim().slice(0, 50) || 'Jogador',
@@ -9815,6 +10166,7 @@ function normalizePlayerRoomMessage(entry = {}) {
     inviteGame,
     inviteTargetTab,
     inviteSessionId,
+    adminNewsExpiresAt: kind === PLAYER_ROOM_ADMIN_NEWS_KIND ? adminNewsExpiresAt : '',
     userId: String(entry.userId || ''),
     username: String(entry.username || 'Jogador').trim().slice(0, 50) || 'Jogador',
     avatar: String(entry.avatar || '🧑'),
@@ -9833,6 +10185,7 @@ function isValidPlayerRoomMessage(message = {}) {
   if (message.kind === 'animated_sticker') return !!String(message.mediaData || '').trim() || !!String(message.mediaCaption || '').trim();
   if (message.kind === 'call') return !!String(message.callSessionId || '').trim();
   if (message.kind === 'poker_invite') return !!String(message.text || '').trim() || String(message.inviteGame || '') === 'poker_online';
+  if (message.kind === PLAYER_ROOM_ADMIN_NEWS_KIND) return !!sanitizeAdminNewsText(message.text || '');
   return !!String(message.text || '').trim();
 }
 
@@ -10209,6 +10562,7 @@ function loadPlayerRoomHistory() {
     playerRoomHistory = parsed
       .map((item) => normalizePlayerRoomMessage(item))
       .filter((item) => isValidPlayerRoomMessage(item))
+      .filter((item) => !isPlayerRoomAdminNewsExpiredMessage(item))
       .slice(-PLAYER_ROOM_MAX_MESSAGES);
   } catch (e) {
     console.warn('Falha ao carregar histórico local da sala:', e);
@@ -10220,6 +10574,7 @@ function savePlayerRoomHistory() {
   try {
     const safeHistory = playerRoomHistory
       .slice(-PLAYER_ROOM_MAX_MESSAGES)
+      .filter((item) => !isPlayerRoomAdminNewsExpiredMessage(item))
       .map((item) => {
         const copy = { ...item };
         if (copy.mediaData) copy.mediaData = '';
@@ -12284,6 +12639,7 @@ function renderPlayerRoomMessages() {
   playerRoomHistory.forEach((msg, idx) => {
     if (!isPlayerRoomBlessMessageVisibleForViewer(msg, myUserId)) return;
     if (isPlayerRoomPrivateBlessMessage(msg)) return;
+    if (isPlayerRoomAdminNewsMessage(msg)) return;
 
     const card = document.createElement('div');
     card.className = 'room-message';
@@ -12657,6 +13013,7 @@ function getPlayerRoomNotificationPreview(message = {}) {
   if (kind === 'animated_sticker') return '✨ Enviou uma figurinha animada';
   if (kind === 'sticker') return `${message?.stickerEmoji || '😀'} ${message?.stickerLabel || 'Figurinha'}`;
   if (kind === 'poker_invite') return text || '🃏 Convite para Poker online';
+  if (kind === PLAYER_ROOM_ADMIN_NEWS_KIND) return text || '📰 Nova notícia do admin';
   if (kind === 'call') return text || '📞 Atualização de ligação da sala';
   if (text) return text.slice(0, 180);
   return 'Nova mensagem na sala';
@@ -12751,6 +13108,7 @@ async function notifyIncomingPlayerRoomMessage(message = {}) {
   const preview = getPlayerRoomNotificationPreview(message);
   const notifTag = `room-msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const kind = String(message?.kind || 'text').toLowerCase();
+  const isAdminNews = kind === PLAYER_ROOM_ADMIN_NEWS_KIND;
   const blessPayload = buildPlayerRoomBlessAcceptEventPayload(message, myUserId);
   const notificationData = {
     target: 'player-room',
@@ -12767,7 +13125,9 @@ async function notifyIncomingPlayerRoomMessage(message = {}) {
     Object.assign(notificationData, blessPayload);
   }
 
-  const title = blessPayload ? `✨ ${PLAYER_ROOM_BLESS_EVENT_TITLE}` : `💬 ${sender}`;
+  const title = blessPayload
+    ? `✨ ${PLAYER_ROOM_BLESS_EVENT_TITLE}`
+    : (isAdminNews ? '📰 Notícia do admin' : `💬 ${sender}`);
   const blessBodyMessage = String(message?.text || PLAYER_ROOM_BLESS_EVENT_MESSAGE).trim() || PLAYER_ROOM_BLESS_EVENT_MESSAGE;
   const body = blessPayload
     ? `${sender} enviou: "${blessBodyMessage}". Toque em "Aceitar mensagem".`
@@ -12790,9 +13150,46 @@ async function notifyIncomingPlayerRoomMessage(message = {}) {
   });
 }
 
+function handlePlayerRoomAdminNewsMessage(message = {}) {
+  if (!isPlayerRoomAdminNewsMessage(message)) return;
+  if (isPlayerRoomAdminNewsExpiredMessage(message)) return;
+
+  const senderId = String(message.userId || '').trim();
+  const senderName = String(message.username || 'Admin').trim() || 'Admin';
+  const myUserId = String(getPlayerRoomCurrentUserId() || '').trim();
+  const myName = String(getPlayerRoomDisplayName() || '').trim().toLowerCase();
+  const senderNameLower = senderName.toLowerCase();
+  const isMine = !!(
+    (myUserId && senderId && playerRoomIdEquals(myUserId, senderId)) ||
+    (myName && senderNameLower && myName === senderNameLower)
+  );
+
+  const { added, entry } = upsertAdminNewsInboxEntryFromMessage(message, { persist: true });
+  if (!entry) return;
+  if (isMine) {
+    const list = getAdminNewsInboxListFromState(gameState);
+    const idx = list.findIndex((item) => String(item.id || '') === String(entry.id || ''));
+    if (idx >= 0 && !String(list[idx].readAt || '').trim()) {
+      list[idx] = { ...list[idx], readAt: new Date().toISOString() };
+      setAdminNewsInboxList(list, { persist: true, silent: true });
+    }
+    return;
+  }
+  if (!added) return;
+
+  queueTrophyUniverseEvent({
+    eventKey: `admin-news-${String(entry.id || '').trim()}`,
+    icon: '📰',
+    title: 'NOTÍCIA DO ADMIN',
+    name: senderName,
+    ability: entry.text
+  });
+}
+
 function appendPlayerRoomMessage(message) {
   const normalized = normalizePlayerRoomMessage(message);
   if (!isValidPlayerRoomMessage(normalized)) return;
+  if (isPlayerRoomAdminNewsExpiredMessage(normalized)) return;
   if (isDuplicatePlayerRoomMessage(normalized)) return;
 
   playerRoomHistory.push(normalized);
@@ -12802,6 +13199,7 @@ function appendPlayerRoomMessage(message) {
 
   savePlayerRoomHistory();
   renderPlayerRoomMessages();
+  handlePlayerRoomAdminNewsMessage(normalized);
 
   if (isPlayerRoomPrivateBlessMessage(normalized)) {
     const myUserId = getPlayerRoomCurrentUserId();
@@ -12823,15 +13221,43 @@ function appendPlayerRoomMessage(message) {
   });
 }
 
+function clearPlayerRoomReconnectTimer() {
+  if (playerRoomReconnectTimer) {
+    clearTimeout(playerRoomReconnectTimer);
+    playerRoomReconnectTimer = null;
+  }
+}
+
+function schedulePlayerRoomReconnect({ immediate = false, force = false } = {}) {
+  if (!isLoggedIn || !isOnlineNow()) return;
+  clearPlayerRoomReconnectTimer();
+
+  const safeAttempt = Math.min(playerRoomReconnectAttempt + 1, 12);
+  playerRoomReconnectAttempt = safeAttempt;
+  const delay = immediate ? 0 : Math.min(20000, 1200 * safeAttempt);
+  setPlayerRoomStatus('Reconectando...', 'connecting');
+
+  playerRoomReconnectTimer = setTimeout(async () => {
+    playerRoomReconnectTimer = null;
+    try {
+      const shouldForce = force || !!playerRoomChannel || safeAttempt > 1;
+      const connected = await ensurePlayerRoomConnection({ silent: true, force: shouldForce });
+      if (!connected) {
+        schedulePlayerRoomReconnect({ immediate: false, force: true });
+      }
+    } catch (e) {
+      console.warn('Falha ao reconectar sala automaticamente:', e);
+      schedulePlayerRoomReconnect({ immediate: false, force: true });
+    }
+  }, delay);
+}
+
 function onPlayerRoomStatus(status, meta = {}) {
   const current = String(status || '').toUpperCase();
   if (current === 'SUBSCRIBED') {
     playerRoomConnected = true;
     playerRoomReconnectAttempt = 0;
-    if (playerRoomReconnectTimer) {
-      clearTimeout(playerRoomReconnectTimer);
-      playerRoomReconnectTimer = null;
-    }
+    clearPlayerRoomReconnectTimer();
     setPlayerRoomStatus('Na internet', 'online');
     syncPlayerRoomPresenceProfile({ force: true });
     return;
@@ -12865,19 +13291,7 @@ function onPlayerRoomStatus(status, meta = {}) {
       setPlayerRoomStatus('Desconectado', 'offline');
       console.warn(`Sala dos jogadores desconectada (${current}).`);
     }
-    if (playerRoomReconnectTimer) clearTimeout(playerRoomReconnectTimer);
-    if (isLoggedIn && isOnlineNow()) {
-      const safeAttempt = Math.min(playerRoomReconnectAttempt + 1, 6);
-      playerRoomReconnectAttempt = safeAttempt;
-      const delay = Math.min(12000, 1200 * safeAttempt);
-      setPlayerRoomStatus('Reconectando...', 'connecting');
-      playerRoomReconnectTimer = setTimeout(() => {
-        playerRoomReconnectTimer = null;
-        ensurePlayerRoomConnection({ silent: true, force: true }).catch((e) => {
-          console.warn('Falha ao reconectar sala automaticamente:', e);
-        });
-      }, delay);
-    }
+    schedulePlayerRoomReconnect({ immediate: false, force: true });
     return;
   }
 
@@ -12892,10 +13306,7 @@ function disconnectPlayerRoom({ resetStatus = true } = {}) {
   } catch (e) {
     console.warn('Falha ao desconectar sala dos jogadores:', e);
   } finally {
-    if (playerRoomReconnectTimer) {
-      clearTimeout(playerRoomReconnectTimer);
-      playerRoomReconnectTimer = null;
-    }
+    clearPlayerRoomReconnectTimer();
     playerRoomReconnectAttempt = 0;
     playerRoomChannel = null;
     playerRoomConnected = false;
@@ -12991,18 +13402,18 @@ async function ensurePlayerRoomConnection({ silent = true, force = false } = {})
       if (!playerRoomChannel) return false;
       const subscribed = await waitForPlayerRoomSubscribed(9000);
       if (!subscribed) {
+        playerRoomConnected = false;
         setPlayerRoomStatus('Falha de conexão', 'offline');
+        schedulePlayerRoomReconnect({ immediate: false, force: true });
         if (!silent) showToast('⚠️ Sala demorou para conectar. Tente reconectar.');
         return false;
       }
       return true;
     } catch (e) {
       playerRoomConnected = false;
-      if (playerRoomReconnectTimer) {
-        clearTimeout(playerRoomReconnectTimer);
-        playerRoomReconnectTimer = null;
-      }
+      clearPlayerRoomReconnectTimer();
       setPlayerRoomStatus('Falha de conexão', 'offline');
+      schedulePlayerRoomReconnect({ immediate: false, force: true });
       if (!silent) {
         const msg = String(e?.message || '').trim();
         showToast(msg ? `❌ Sala offline: ${msg}` : '❌ Não consegui conectar na sala agora.');
@@ -13898,7 +14309,10 @@ function bootstrapPlayerRoomUI() {
   updatePlayerRoomMusicButtonUI();
   updateArenaMusicButtonUI();
   loadPlayerRoomHistory();
+  syncAdminNewsInboxFromPlayerRoomHistory({ persist: true });
+  purgeExpiredAdminNewsInbox({ persist: false, silent: true });
   renderPlayerRoomMessages();
+  updatePlayerRoomNewsInboxHint();
   setPlayerRoomStatus(isLoggedIn ? 'Conectando...' : 'Faça login para entrar', isLoggedIn ? 'connecting' : 'offline');
   renderPlayerRoomEmojiPanel();
   renderPlayerRoomStickerPanel();
@@ -14077,6 +14491,10 @@ function bootstrapPlayerRoomUI() {
     }
     if (event.key === 'Escape' && elements.playerRoomProfileModal?.classList.contains('active')) {
       closePlayerRoomProfileModal();
+      return;
+    }
+    if (event.key === 'Escape' && elements.adminNewsInboxModal?.classList.contains('active')) {
+      closeAdminNewsInboxModal();
     }
   });
 
@@ -14259,6 +14677,12 @@ function bootstrapPlayerRoomUI() {
       savePlayerRoomHistory();
       renderPlayerRoomMessages();
       showToast('🧹 Histórico local da sala limpo.');
+    });
+  }
+
+  if (elements.playerRoomNewsInboxBtn) {
+    elements.playerRoomNewsInboxBtn.addEventListener('click', () => {
+      openAdminNewsInboxModal();
     });
   }
 
@@ -14519,7 +14943,7 @@ function bootstrapPlayerRoomUI() {
 
   window.addEventListener('online', () => {
     if (isLoggedIn) {
-      ensurePlayerRoomConnection({ silent: true, force: true }).catch((e) => console.warn('Falha ao reconectar sala (online):', e));
+      schedulePlayerRoomReconnect({ immediate: true, force: true });
       if (ARENA_DUEL_ENABLED || isPokerOnlineMode()) {
         ensureArenaConnection({ silent: true }).catch((e) => console.warn('Falha ao reconectar arena (online):', e));
       }
@@ -14527,6 +14951,7 @@ function bootstrapPlayerRoomUI() {
   });
 
   window.addEventListener('offline', () => {
+    clearPlayerRoomReconnectTimer();
     playerRoomConnected = false;
     setPlayerRoomStatus('Sem internet', 'offline');
     arenaConnected = false;
@@ -14534,6 +14959,19 @@ function bootstrapPlayerRoomUI() {
     clearPlayerRoomAudioRecorder();
     endPlayerRoomCall({ sendSignal: false, keepIncoming: true, reason: 'Sem internet para ligação' }).catch(() => {});
     renderArena();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (!isLoggedIn || !isOnlineNow()) return;
+    if (playerRoomConnected && playerRoomChannel) return;
+    schedulePlayerRoomReconnect({ immediate: true, force: true });
+  });
+
+  window.addEventListener('focus', () => {
+    if (!isLoggedIn || !isOnlineNow()) return;
+    if (playerRoomConnected && playerRoomChannel) return;
+    schedulePlayerRoomReconnect({ immediate: true, force: true });
   });
 
   window.addEventListener('beforeunload', () => {
@@ -17022,6 +17460,9 @@ function buildCompactGameState(state) {
   if (Array.isArray(compact.gratitudeJournal) && compact.gratitudeJournal.length > 365) {
     compact.gratitudeJournal = compact.gratitudeJournal.slice(0, 365);
   }
+  if (Array.isArray(compact.adminNewsInbox)) {
+    compact.adminNewsInbox = getAdminNewsInboxListFromState({ adminNewsInbox: compact.adminNewsInbox });
+  }
   if (Array.isArray(compact.bibleHighlights) && compact.bibleHighlights.length > MAX_BIBLE_HIGHLIGHTS) {
     compact.bibleHighlights = compact.bibleHighlights.slice(-MAX_BIBLE_HIGHLIGHTS);
   }
@@ -17074,7 +17515,11 @@ function buildCompactGameState(state) {
       cpuChips: normalizePokerChipValue(compact.poker.cpuChips, POKER_CPU_START_CHIPS),
       handsPlayed: Math.max(0, Number(compact.poker.handsPlayed || 0) || 0),
       wins: Math.max(0, Number(compact.poker.wins || 0) || 0),
-      losses: Math.max(0, Number(compact.poker.losses || 0) || 0)
+      losses: Math.max(0, Number(compact.poker.losses || 0) || 0),
+      robotCoinsExchanged: Math.min(
+        POKER_ROBOT_COIN_EXCHANGE_LIMIT,
+        Math.max(0, Math.round(Number(compact.poker.robotCoinsExchanged || 0) || 0))
+      )
     };
   }
 
@@ -19019,6 +19464,9 @@ function mapSupabaseProfileToGameState(profile = {}, authEmail = '') {
     financeMonthHistory: Array.isArray(inventoryData.financeMonthHistory) ? inventoryData.financeMonthHistory : [],
     financeArchivedKeys: Array.isArray(inventoryData.financeArchivedKeys) ? inventoryData.financeArchivedKeys : [],
     dailyTasks: Array.isArray(inventoryData.tasksBackup) ? inventoryData.tasksBackup : [],
+    workWeekPlan: Array.isArray(inventoryData.workWeekPlanBackup)
+      ? inventoryData.workWeekPlanBackup
+      : (Array.isArray(inventoryData.workWeekPlan) ? inventoryData.workWeekPlan : []),
     deletedTaskIds: Array.isArray(inventoryData.deletedTaskIds) ? inventoryData.deletedTaskIds : [],
     finances: Array.isArray(inventoryData.financesBackup) ? inventoryData.financesBackup : [],
     workLog: Array.isArray(inventoryData.workLogBackup) ? inventoryData.workLogBackup : [],
@@ -19033,7 +19481,8 @@ function mapSupabaseProfileToGameState(profile = {}, authEmail = '') {
       cpuChips: POKER_CPU_START_CHIPS,
       handsPlayed: 0,
       wins: 0,
-      losses: 0
+      losses: 0,
+      robotCoinsExchanged: 0
     },
     pokerOnlineBonusClaimed: !!inventoryData.pokerOnlineBonusClaimed,
     nofapStartAt: inventoryData.nofapStartAt || null,
@@ -20348,6 +20797,8 @@ function openAdminUsersPanel() {
     showToast('⚠️ Acesso permitido apenas para admin.');
     return;
   }
+  if (elements.adminNewsInput) elements.adminNewsInput.value = '';
+  setAdminNewsComposerStatus('Aguardando envio.');
   if (elements.adminUsersModal) elements.adminUsersModal.classList.add('active');
   loadAdminUsersForPanel().catch((error) => {
     console.error('Erro ao abrir painel admin:', error);
@@ -20357,6 +20808,36 @@ function openAdminUsersPanel() {
 
 function closeAdminUsersPanel() {
   if (elements.adminUsersModal) elements.adminUsersModal.classList.remove('active');
+}
+
+async function sendAdminNewsFromAdminPanel() {
+  if (!isAdminControlUser(gameState)) {
+    showToast('⚠️ Apenas o admin pode enviar notícias.');
+    return;
+  }
+  const text = sanitizeAdminNewsText(elements.adminNewsInput?.value || '');
+  if (!text) {
+    setAdminNewsComposerStatus('Digite uma notícia para enviar.', true);
+    showToast('⚠️ Digite a notícia antes de enviar.');
+    return;
+  }
+
+  setAdminNewsComposerStatus('Enviando notícia...');
+  const expiresAt = new Date(Date.now() + PLAYER_ROOM_ADMIN_NEWS_TTL_MS).toISOString();
+  const sent = await sendPlayerRoomPayload({
+    kind: PLAYER_ROOM_ADMIN_NEWS_KIND,
+    text,
+    adminNewsExpiresAt: expiresAt
+  }, { toastFail: '❌ Não consegui enviar a notícia agora.' });
+
+  if (!sent) {
+    setAdminNewsComposerStatus('Falha ao enviar notícia. Tente novamente.', true);
+    return;
+  }
+
+  if (elements.adminNewsInput) elements.adminNewsInput.value = '';
+  setAdminNewsComposerStatus('Notícia enviada com sucesso.');
+  showToast('📰 Notícia enviada para os jogadores.');
 }
 
 async function saveAdminPanelUserChanges() {
@@ -22672,6 +23153,7 @@ function normalizeGameState(data) {
       handsPlayed: 0,
       wins: 0,
       losses: 0,
+      robotCoinsExchanged: 0,
       difficulty: 'normal'
     },
     streak: 0,
@@ -22715,6 +23197,7 @@ function normalizeGameState(data) {
     zenPhotoVault: [],
     zenMusic: null,
     bibleHighlights: [],
+    adminNewsInbox: [],
     gratitudeJournal: [],
     taskHistory: [],
     deletedTaskIds: [],
@@ -22780,6 +23263,9 @@ function normalizeGameState(data) {
     merged.zenMusic = null;
   }
   merged.bibleHighlights = normalizeBibleHighlights(merged.bibleHighlights);
+  merged.adminNewsInbox = getAdminNewsInboxListFromState({
+    adminNewsInbox: Array.isArray(merged.adminNewsInbox) ? merged.adminNewsInbox : []
+  });
 
   if (!Array.isArray(merged.financeMonthHistory)) {
     merged.financeMonthHistory = [];
@@ -22818,6 +23304,10 @@ function normalizeGameState(data) {
     handsPlayed: Math.max(0, Number(rawPoker.handsPlayed || 0) || 0),
     wins: Math.max(0, Number(rawPoker.wins || 0) || 0),
     losses: Math.max(0, Number(rawPoker.losses || 0) || 0),
+    robotCoinsExchanged: Math.min(
+      POKER_ROBOT_COIN_EXCHANGE_LIMIT,
+      Math.max(0, Math.round(Number(rawPoker.robotCoinsExchanged || 0) || 0))
+    ),
     difficulty: normalizePokerDifficulty(rawPoker.difficulty || 'normal')
   };
 
@@ -23289,7 +23779,7 @@ function stateHasMeaningfulProgress(state = {}) {
     if (Number(safe.wallet?.totalSpent || 0) > 0) return true;
     if (String(safe.playerProfilePhoto || '').trim()) return true;
     if (Number(safe.savings?.total || 0) > 0) return true;
-    if (hasNonEmptyArray(safe.dailyTasks) || hasNonEmptyArray(safe.finances) || hasNonEmptyArray(safe.workLog)) return true;
+    if (hasNonEmptyArray(safe.dailyTasks) || hasNonEmptyArray(safe.finances) || hasNonEmptyArray(safe.workLog) || hasNonEmptyArray(safe.workWeekPlan)) return true;
     if (hasNonEmptyArray(safe.inventory) || hasNonEmptyArray(safe.bills)) return true;
     if (hasNonEmptyArray(safe.trophies)) return true;
     if (hasNonEmptyArray(safe.gratitudeJournal) || hasNonEmptyArray(safe.taskHistory)) return true;
@@ -23384,6 +23874,7 @@ function stateHasMeaningfulProgress(state = {}) {
       'bills',
       'financeMonthHistory',
       'financeArchivedKeys',
+      'workWeekPlan',
       'bibleHighlights',
       'gratitudeJournal',
       'taskHistory',
@@ -30993,6 +31484,8 @@ function updateUI() {
   }
 
   updatePlayerRoomNofapUI({ sync: true, silent: true });
+  purgeExpiredAdminNewsInbox({ persist: false, silent: true });
+  updatePlayerRoomNewsInboxHint();
   updateZenPhotoVaultUI();
   deferTask(() => syncArenaPresence(), 850);
   const hasSavedWorkAddress = !!String(gameState?.job?.address || '').trim();
@@ -46586,6 +47079,22 @@ elements.adminUserDeleteBtn?.addEventListener('click', () => {
 elements.adminUserClearSelectionBtn?.addEventListener('click', () => {
   clearAdminPanelSelection();
 });
+elements.adminNewsSendBtn?.addEventListener('click', () => {
+  sendAdminNewsFromAdminPanel().catch((error) => {
+    console.error('Erro ao enviar notícia do admin:', error);
+    setAdminNewsComposerStatus(String(error?.message || 'Falha ao enviar notícia.'), true);
+    showToast(`❌ ${error?.message || 'Falha ao enviar notícia.'}`);
+  });
+});
+elements.adminNewsInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    sendAdminNewsFromAdminPanel().catch((error) => {
+      console.error('Erro ao enviar notícia do admin (atalho):', error);
+      setAdminNewsComposerStatus(String(error?.message || 'Falha ao enviar notícia.'), true);
+    });
+  }
+});
 elements.adminUsersCloseBtn?.addEventListener('click', () => {
   closeAdminUsersPanel();
 });
@@ -46594,9 +47103,21 @@ elements.adminUsersModal?.addEventListener('click', (event) => {
     closeAdminUsersPanel();
   }
 });
+elements.adminNewsInboxCloseBtn?.addEventListener('click', () => {
+  closeAdminNewsInboxModal();
+});
+elements.adminNewsInboxModal?.addEventListener('click', (event) => {
+  if (event.target === elements.adminNewsInboxModal) {
+    closeAdminNewsInboxModal();
+  }
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && elements.adminUsersModal?.classList.contains('active')) {
     closeAdminUsersPanel();
+    return;
+  }
+  if (event.key === 'Escape' && elements.adminNewsInboxModal?.classList.contains('active')) {
+    closeAdminNewsInboxModal();
     return;
   }
   if (event.key === 'Escape' && elements.financeEditModal?.classList.contains('active')) {
