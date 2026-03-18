@@ -1,13 +1,13 @@
 {
   "appName": "Universo Real",
   "subtitle": "Baixe a versao mais recente do aplicativo.",
-  "version": "2026.03.17",
-  "releaseDate": "2026-03-17",
+  "version": "2026.03.18",
+  "releaseDate": "2026-03-18",
   "apkUrl": "./downloads/universo-real-latest.apk",
   "apkFilename": "universo-real-latest.apk",
   "whatsNew": [
-    "Atualizacao geral do aplicativo",
-    "Ajustes no modulo de trabalho",
+    "Ajustes de sincronizacao do ranking entre PC e telefone",
+    "Correcao de pontos zerados no ranking",
     "Melhorias de estabilidade"
   ]
 }
