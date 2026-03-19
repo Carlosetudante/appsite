@@ -407,6 +407,15 @@
             <span class="hero-hud-chip">⚡ Progressão Ativa</span>
             <span class="hero-hud-chip">🎯 Missão: Evoluir</span>
           </div>
+          <div class="section hero-section" style="margin-top:12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+              <div>
+                <div style="font-weight:800;">📰 Notícias do Admin</div>
+                <div class="small" id="heroNewsInboxHint" style="opacity:.82;">Sem notícias novas.</div>
+              </div>
+              <button class="btn" id="heroNewsInboxBtn" type="button">📰 Caixa de notícias</button>
+            </div>
+          </div>
           <div class="hero-rank-showcase" id="heroRankShowcase">
             <div class="hero-rank-head">
               <div class="hero-rank-title">🏆 Rank do Herói</div>
@@ -929,7 +938,9 @@
               <div class="room-profile-tools">
                 <button class="room-media-btn" id="setProfilePhotoBtn" type="button">🔒 Foto de Perfil</button>
                 <button class="room-media-btn" id="clearProfilePhotoBtn" type="button">🧹 Remover Foto</button>
+                <button class="room-media-btn" id="playerRoomNewsInboxBtn" type="button">📰 Caixa de notícias</button>
               </div>
+              <div class="small room-profile-photo-hint" id="playerRoomNewsInboxHint">Sem notícias novas.</div>
               <div class="small room-profile-photo-hint" id="profilePhotoHint">Bloqueado: compre na loja para ativar foto social.</div>
               <img id="profilePhotoPreview" class="room-profile-photo-preview" alt="Prévia da foto de perfil social">
               <div id="playerRoomRecordStatus" class="room-record-status hidden">Gravando áudio...</div>
@@ -989,6 +1000,7 @@
               <div class="poker-seat enemy poker-seat-top">
                 <div class="small" id="pokerOpponentLabel">CPU</div>
                 <div id="pokerCpuChips">Saldo: 0</div>
+                <div class="small" id="pokerCpuCoinsInfo">CPU: aguardando rodada</div>
                 <div class="small" id="pokerCpuBet">Aposta: 0</div>
               </div>
               <div class="small poker-seat-label">Mão da CPU</div>
@@ -2241,6 +2253,25 @@
           </div>
         </div>
 
+        <div style="margin-top:12px; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:10px;">
+          <div class="small" style="margin-bottom:6px; opacity:.88;">📰 Notícia do Admin (expira em 1 dia)</div>
+          <textarea id="adminNewsInput" rows="3" maxlength="260" placeholder="Digite o aviso/notícia que vai aparecer para os jogadores..."></textarea>
+          <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
+            <button class="btn" id="adminNewsSendBtn">Enviar notícia</button>
+            <span class="small" id="adminNewsStatus" style="opacity:.8;">Aguardando envio.</span>
+          </div>
+        </div>
+
+        <div style="margin-top:12px; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:10px;">
+          <div class="small" style="margin-bottom:6px; opacity:.88;">🛠️ Modo Manutenção (global)</div>
+          <textarea id="adminMaintenanceMessageInput" rows="2" maxlength="240" placeholder="Ex: Atualização disponível. Toque em Atualizar app para baixar a nova versão."></textarea>
+          <div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn danger" id="adminMaintenanceEnableBtn">Ativar manutenção</button>
+            <button class="ghost" id="adminMaintenanceDisableBtn">Desativar manutenção</button>
+            <span class="small" id="adminMaintenanceStatus" style="opacity:.8;">Manutenção desativada.</span>
+          </div>
+        </div>
+
         <div style="display:flex; gap:8px; margin-top: 16px;">
           <button class="ghost" id="adminUsersCloseBtn">Fechar</button>
         </div>
@@ -2280,6 +2311,112 @@
           <button class="btn" id="workEditSaveBtn">Salvar</button>
           <button class="ghost" id="workEditDeleteBtn" style="color: var(--danger);">Excluir</button>
           <button class="ghost" id="workEditCancelBtn">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="adminNewsInboxModal">
+      <div class="modal-content" style="max-width:640px;">
+        <h2>📰 Caixa de Notícias</h2>
+        <div class="small" style="margin-bottom:10px; opacity:.82;">Mensagens do admin ficam salvas por até 24 horas.</div>
+        <div id="adminNewsInboxList" style="max-height:340px; overflow:auto; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:8px;">
+          <div class="small" style="opacity:.75;">Sem notícias no momento.</div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button class="ghost" id="adminNewsInboxCloseBtn">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="appMaintenanceBanner" class="hidden" style="position:fixed; top:8px; left:50%; transform:translateX(-50%); width:min(96vw, 880px); z-index:10040; border:1px solid rgba(255,80,80,0.45); border-radius:12px; background:linear-gradient(145deg, rgba(70,16,16,0.96), rgba(28,8,8,0.95)); box-shadow:0 14px 38px rgba(0,0,0,.45); padding:10px 12px;">
+      <div style="display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap;">
+        <div style="flex:1; min-width:220px;">
+          <div style="font-weight:800; color:#fecaca; margin-bottom:4px;">🛠️ Modo manutenção ativo</div>
+          <div id="appMaintenanceMessage" class="small" style="opacity:.96; line-height:1.35;">Atualização disponível. Toque em Atualizar app.</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="appMaintenanceUpdateBtn" class="btn" type="button">🔄 Atualizar app</button>
+        </div>
+      </div>
+    </div>
+
+    <button
+      id="globalHelpFab"
+      class="help-fab hidden"
+      type="button"
+      aria-label="Ajuda rápida do app"
+      title="Como usar o app"
+    >
+      ?
+    </button>
+
+    <div class="modal" id="globalHelpModal">
+      <div class="modal-content help-guide-modal-content">
+        <div class="help-guide-header">
+          <h2>❓ Como funciona o app</h2>
+          <button class="ghost" id="globalHelpCloseBtn" type="button">Fechar</button>
+        </div>
+        <p class="small help-guide-subtitle">
+          Guia rápido para novos usuários. Toque em qualquer seção para entender melhor o fluxo.
+        </p>
+        <div class="help-guide-grid">
+          <article class="help-guide-card">
+            <h3>🏠 Início (Herói)</h3>
+            <p>Veja nível, XP, moedas, conquistas e progresso geral do personagem.</p>
+          </article>
+          <article class="help-guide-card">
+            <h3>✅ Tarefas</h3>
+            <p>Crie missões do dia, marque concluídas e ganhe evolução no app.</p>
+          </article>
+          <article class="help-guide-card">
+            <h3>💰 Finanças</h3>
+            <p>Registre entradas/saídas, parcelas e acompanhe metas financeiras.</p>
+          </article>
+          <article class="help-guide-card">
+            <h3>🧰 Trabalho</h3>
+            <p>Controle ponto, carga horária, produção e histórico de jornadas.</p>
+          </article>
+          <article class="help-guide-card">
+            <h3>💬 Sala</h3>
+            <p>Converse em tempo real, envie mídia e participe dos eventos sociais.</p>
+          </article>
+          <article class="help-guide-card">
+            <h3>🃏 Poker</h3>
+            <p>Entre na mesa, use fichas/moedas e jogue partidas com outros usuários.</p>
+          </article>
+          <article class="help-guide-card">
+            <h3>✝️ Bíblia e Anotações</h3>
+            <p>Leia, destaque trechos, salve anotações e mantenha seu histórico espiritual.</p>
+          </article>
+          <article class="help-guide-card">
+            <h3>⚙️ Mais / Admin</h3>
+            <p>Configurações gerais, painel administrativo e recursos avançados.</p>
+          </article>
+        </div>
+        <div class="help-guide-actions">
+          <button class="ghost" id="globalHelpReplayIntroBtn" type="button">Ver intro novamente</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="appIntroModal">
+      <div class="modal-content app-intro-modal-content">
+        <div class="app-intro-head">
+          <span class="app-intro-step" id="appIntroStepLabel">Passo 1 de 4</span>
+          <h2 id="appIntroTitle">Bem-vindo ao Universo Real</h2>
+          <p id="appIntroDescription">
+            Aqui você organiza sua rotina em formato de evolução pessoal.
+          </p>
+        </div>
+        <ul class="app-intro-points" id="appIntroPoints">
+          <li>Você recebe moedas e XP conforme usa o app.</li>
+          <li>As abas principais ficam na navegação superior e inferior.</li>
+          <li>O botão "?" abre este guia sempre que precisar.</li>
+        </ul>
+        <div class="app-intro-actions">
+          <button class="ghost" id="appIntroSkipBtn" type="button">Pular</button>
+          <button class="ghost" id="appIntroPrevBtn" type="button">Voltar</button>
+          <button class="btn" id="appIntroNextBtn" type="button">Próximo</button>
         </div>
       </div>
     </div>

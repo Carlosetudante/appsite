@@ -34,6 +34,7 @@ window.OracleConfig = window.OracleConfig || {
   movieApiRegion: 'BR',
   movieApiKey: '',
   appShareUrl: 'https://carlosetudante.github.io/appsite/',
+  appUpdateUrl: 'https://carlosetudante.github.io/appsite/',
   telemetry: true,        // liga log básico
   telemetrySample: 1.0    // 1.0 = logar tudo, 0.2 = 20%
 };
@@ -1934,6 +1935,46 @@ const CLASS_THEMES = {
 // Caminho padrão para música Zen (Online para funcionar direto)
 const DEFAULT_ZEN_MUSIC = 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3';
 const APP_SHARE_URL_STORAGE_KEY = 'ur_app_share_url_v1';
+const APP_UPDATE_URL_STORAGE_KEY = 'ur_app_update_url_v1';
+const APP_INTRO_SEEN_KEY = 'ur_app_intro_seen_v1';
+const APP_INTRO_STEPS = Object.freeze([
+  {
+    title: 'Bem-vindo ao Universo Real',
+    description: 'Seu app junta rotina, organização e evolução em um só lugar.',
+    points: [
+      'Use o botão "?" sempre que quiser rever como cada área funciona.',
+      'Moedas, XP e progresso são atualizados conforme você usa o app.',
+      'A navegação principal fica nas abas do topo e na barra inferior (celular).'
+    ]
+  },
+  {
+    title: 'Tarefas, Finanças e Trabalho',
+    description: 'Essas três abas são o coração da organização diária.',
+    points: [
+      'Tarefas: crie missões e marque concluídas para manter foco.',
+      'Finanças: registre despesas, receitas e parcelas sem perder histórico.',
+      'Trabalho: controle ponto, carga horária e registros do dia.'
+    ]
+  },
+  {
+    title: 'Sala, Poker e Recursos Sociais',
+    description: 'Interaja com outros jogadores e participe dos eventos em tempo real.',
+    points: [
+      'Sala: chat, mídia e interações entre usuários.',
+      'Poker: partidas, moedas/fichas e eventos de vitória.',
+      'Admin: painel para gestão de contas (quando habilitado).'
+    ]
+  },
+  {
+    title: 'Bíblia e Anotações',
+    description: 'Registre aprendizados e mantenha sua leitura organizada.',
+    points: [
+      'Destaque textos importantes durante a leitura.',
+      'Salve anotações para revisar depois com mais facilidade.',
+      'Use o app diariamente para manter progresso contínuo.'
+    ]
+  }
+]);
 
 // Playlist Zen
 let zenPlaylist = [];
@@ -1946,6 +1987,8 @@ const ZEN_IMAGE_SLIDESHOW_MS = 2600;
 let gameState = null;
 let isLoggedIn = false;
 let loginTime = null;
+let appIntroStepIndex = 0;
+let appIntroPromptedKey = '';
 let cinemaApiLastResults = [];
 const tmdbProviderLinkCache = new Map();
 let financeFilter = 'all';
@@ -1959,12 +2002,15 @@ const adminPanelState = {
   loading: false,
   source: 'local',
   selectedId: '',
-  rows: []
+  rows: [],
+  hiddenProfileIds: new Set()
 };
 const MAX_FINANCE_MONTH_HISTORY = 120;
 const MAX_FINANCE_ARCHIVED_KEYS = 8000;
 const MAX_DELETED_TASK_IDS = 2000;
 const MAX_DELETED_WORKLOG_IDS = 2000;
+const MAX_ADMIN_HIDDEN_RANK_IDS = 2000;
+const ADMIN_HIDDEN_RANK_STORAGE_KEY = 'ur_admin_hidden_rank_ids_v1';
 const PLAYER_ROOM_STORAGE_KEY = 'ur_player_room_history_v1';
 const PLAYER_ROOM_THEME_STORAGE_KEY = 'ur_player_room_theme_v2';
 const PLAYER_ROOM_MUSIC_STORAGE_KEY = 'ur_player_room_music_v1';
@@ -2748,9 +2794,11 @@ const PLAYER_ROOM_MEDIA_KINDS = Object.freeze(new Set([
 ]));
 const PLAYER_ROOM_SPECIAL_KINDS = Object.freeze(new Set([
   'poker_invite',
-  'admin_news'
+  'admin_news',
+  'admin_maintenance'
 ]));
 const PLAYER_ROOM_ADMIN_NEWS_KIND = 'admin_news';
+const PLAYER_ROOM_ADMIN_MAINTENANCE_KIND = 'admin_maintenance';
 const PLAYER_ROOM_ADMIN_NEWS_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAYER_ROOM_ADMIN_NEWS_MAX_ITEMS = 120;
 const PLAYER_ROOM_MAX_MEDIA_BYTES = 850 * 1024;
@@ -2766,6 +2814,10 @@ const PLAYER_ROOM_GIF_MAX_SECONDS = 6;
 const PLAYER_ROOM_GIF_FPS = 8;
 const PLAYER_ROOM_GIF_MAX_WIDTH = 340;
 const PLAYER_ROOM_BLESS_COOLDOWN_MS = 12000;
+const PLAYER_ROOM_BLESS_OUTBOX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PLAYER_ROOM_BLESS_OUTBOX_MAX_ITEMS = 120;
+const PLAYER_ROOM_BLESS_OUTBOX_RETRY_MS = 25000;
+const PLAYER_ROOM_BLESS_OUTBOX_MAX_ATTEMPTS = 40;
 const PLAYER_ROOM_BLESS_ACCEPT_ACTION = 'bless_accept';
 const PLAYER_ROOM_BLESS_EVENT_TITLE = 'Forca, guerreiro';
 const PLAYER_ROOM_BLESS_EVENT_MESSAGE = 'Forca, guerreiro! Deus te abencoe e te fortaleca.';
@@ -2809,12 +2861,26 @@ let playerRoomKeyboardViewportBound = false;
 let playerRoomKeyboardViewportTimer = null;
 let playerRoomBlessLastSentAt = 0;
 let playerRoomBlessAcceptedEventIds = new Set();
+let playerRoomBlessOutboxProcessing = false;
+let playerRoomBlessOutboxLastProcessAt = 0;
 let arenaChannel = null;
 let arenaConnected = false;
 let arenaInitialized = false;
 let arenaJoinPromise = null;
 let arenaReconnectTimer = null;
 let arenaPlayers = [];
+const GLOBAL_RANK_CLOUD_REFRESH_MS = 15000;
+const GLOBAL_RANK_CLOUD_FAIL_RETRY_MS = 5000;
+const GLOBAL_RANK_CLOUD_MAX_USERS = 1200;
+const GLOBAL_RANK_CLOUD_CACHE_KEY = 'ur_global_rank_cloud_cache_v2';
+const GLOBAL_RANK_CLOUD_CACHE_LEGACY_KEYS = Object.freeze([
+  'ur_global_rank_cloud_cache_v1'
+]);
+const GLOBAL_RANK_CLOUD_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 6;
+let globalRankCloudProfiles = [];
+let globalRankCloudLastFetchAt = 0;
+let globalRankCloudFetchPromise = null;
+let globalRankCloudCacheLoaded = false;
 let arenaIncomingChallenge = null;
 let arenaCurrentMatch = null;
 let arenaQueueActive = false;
@@ -3478,6 +3544,18 @@ const elements = {
   drawerWatchEditorBtn: document.getElementById('drawerWatchEditorBtn'),
   claimBtn: document.getElementById('claimBtn'),
   resetAttrsBtn: document.getElementById('resetAttrsBtn'),
+  globalHelpFab: document.getElementById('globalHelpFab'),
+  globalHelpModal: document.getElementById('globalHelpModal'),
+  globalHelpCloseBtn: document.getElementById('globalHelpCloseBtn'),
+  globalHelpReplayIntroBtn: document.getElementById('globalHelpReplayIntroBtn'),
+  appIntroModal: document.getElementById('appIntroModal'),
+  appIntroStepLabel: document.getElementById('appIntroStepLabel'),
+  appIntroTitle: document.getElementById('appIntroTitle'),
+  appIntroDescription: document.getElementById('appIntroDescription'),
+  appIntroPoints: document.getElementById('appIntroPoints'),
+  appIntroSkipBtn: document.getElementById('appIntroSkipBtn'),
+  appIntroPrevBtn: document.getElementById('appIntroPrevBtn'),
+  appIntroNextBtn: document.getElementById('appIntroNextBtn'),
   
   // Inventory
   inventoryInput: document.getElementById('inventoryInput'),
@@ -3584,6 +3662,10 @@ const elements = {
   adminNewsInput: document.getElementById('adminNewsInput'),
   adminNewsSendBtn: document.getElementById('adminNewsSendBtn'),
   adminNewsStatus: document.getElementById('adminNewsStatus'),
+  adminMaintenanceMessageInput: document.getElementById('adminMaintenanceMessageInput'),
+  adminMaintenanceEnableBtn: document.getElementById('adminMaintenanceEnableBtn'),
+  adminMaintenanceDisableBtn: document.getElementById('adminMaintenanceDisableBtn'),
+  adminMaintenanceStatus: document.getElementById('adminMaintenanceStatus'),
   watchTemplateList: document.getElementById('watchTemplateList'),
   watchTemplatePreviewConnection: document.getElementById('watchTemplatePreviewConnection'),
   watchTemplatePreviewLayout: document.getElementById('watchTemplatePreviewLayout'),
@@ -3757,9 +3839,14 @@ const elements = {
   playerRoomClearBtn: document.getElementById('playerRoomClearBtn'),
   playerRoomNewsInboxBtn: document.getElementById('playerRoomNewsInboxBtn'),
   playerRoomNewsInboxHint: document.getElementById('playerRoomNewsInboxHint'),
+  heroNewsInboxBtn: document.getElementById('heroNewsInboxBtn'),
+  heroNewsInboxHint: document.getElementById('heroNewsInboxHint'),
   adminNewsInboxModal: document.getElementById('adminNewsInboxModal'),
   adminNewsInboxList: document.getElementById('adminNewsInboxList'),
   adminNewsInboxCloseBtn: document.getElementById('adminNewsInboxCloseBtn'),
+  appMaintenanceBanner: document.getElementById('appMaintenanceBanner'),
+  appMaintenanceMessage: document.getElementById('appMaintenanceMessage'),
+  appMaintenanceUpdateBtn: document.getElementById('appMaintenanceUpdateBtn'),
   playerNofapDays: document.getElementById('playerNofapDays'),
   playerNofapSince: document.getElementById('playerNofapSince'),
   playerNofapBest: document.getElementById('playerNofapBest'),
@@ -3841,6 +3928,7 @@ const elements = {
   pokerOpponentLabel: document.getElementById('pokerOpponentLabel'),
   pokerPlayerChips: document.getElementById('pokerPlayerChips'),
   pokerCpuChips: document.getElementById('pokerCpuChips'),
+  pokerCpuCoinsInfo: document.getElementById('pokerCpuCoinsInfo'),
   pokerPlayerBet: document.getElementById('pokerPlayerBet'),
   pokerCpuBet: document.getElementById('pokerCpuBet'),
   pokerCommunityCards: document.getElementById('pokerCommunityCards'),
@@ -3986,6 +4074,121 @@ function sanitizeAdminNewsText(value, maxLen = 260) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, Math.max(10, Number(maxLen) || 260));
+}
+
+function sanitizeAdminMaintenanceText(value, maxLen = 240) {
+  return String(value ?? '')
+    .replace(/\r/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, Math.max(8, Number(maxLen) || 240));
+}
+
+function normalizeAdminMaintenanceState(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const active = !!(source.active ?? source.maintenanceActive);
+  const updatedAt = normalizeAdminNewsIso(
+    source.updatedAt || source.createdAt,
+    new Date().toISOString()
+  );
+  const updatedBy = String(source.updatedBy || source.senderName || source.username || 'Admin')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60) || 'Admin';
+  const fallbackMessage = active
+    ? 'Atualização disponível. Toque em "Atualizar app".'
+    : 'Manutenção desativada.';
+  const message = sanitizeAdminMaintenanceText(
+    source.message || source.maintenanceMessage || source.text || fallbackMessage
+  ) || fallbackMessage;
+
+  return {
+    active,
+    message,
+    updatedAt,
+    updatedBy
+  };
+}
+
+function getAdminMaintenanceState(state = gameState) {
+  return normalizeAdminMaintenanceState(state?.adminMaintenance || {});
+}
+
+function setAdminMaintenanceComposerStatus(message, isError = false) {
+  if (!elements.adminMaintenanceStatus) return;
+  const safe = String(message || '').trim();
+  elements.adminMaintenanceStatus.textContent = safe || 'Manutenção desativada.';
+  elements.adminMaintenanceStatus.style.color = isError ? '#fecaca' : '';
+}
+
+function renderAdminMaintenanceBanner() {
+  const banner = elements.appMaintenanceBanner;
+  if (!banner) return;
+  const state = getAdminMaintenanceState(gameState);
+  const active = !!state.active;
+  banner.classList.toggle('hidden', !active);
+  if (!active) return;
+
+  if (elements.appMaintenanceMessage) {
+    const when = Number.isFinite(Date.parse(String(state.updatedAt || '').trim()))
+      ? new Date(state.updatedAt).toLocaleString('pt-BR')
+      : '--';
+    elements.appMaintenanceMessage.textContent = `${state.message} • por ${state.updatedBy} • ${when}`;
+  }
+}
+
+function applyAdminMaintenanceState(nextState, { persist = true, silent = true } = {}) {
+  if (!gameState || typeof gameState !== 'object') return;
+  gameState.adminMaintenance = normalizeAdminMaintenanceState(nextState);
+  renderAdminMaintenanceBanner();
+  if (persist && isLoggedIn) saveGame(!!silent);
+}
+
+function isPlayerRoomAdminMaintenanceMessage(message = {}) {
+  return String(message?.kind || '').trim().toLowerCase() === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND;
+}
+
+function handlePlayerRoomAdminMaintenanceMessage(message = {}) {
+  if (!isPlayerRoomAdminMaintenanceMessage(message)) return;
+  const incoming = normalizeAdminMaintenanceState({
+    maintenanceActive: !!message.maintenanceActive,
+    maintenanceMessage: message.maintenanceMessage || message.text,
+    updatedAt: message.createdAt,
+    updatedBy: message.username || 'Admin'
+  });
+  const current = getAdminMaintenanceState(gameState);
+  const incomingMs = Date.parse(String(incoming.updatedAt || '').trim());
+  const currentMs = Date.parse(String(current.updatedAt || '').trim());
+  if (Number.isFinite(currentMs) && Number.isFinite(incomingMs) && incomingMs < currentMs) return;
+
+  applyAdminMaintenanceState(incoming, { persist: true, silent: true });
+  if (incoming.active) {
+    showToast('🛠️ O admin ativou manutenção. Toque em Atualizar app.');
+  } else {
+    showToast('✅ Modo manutenção desativado pelo admin.');
+  }
+}
+
+function syncAdminMaintenanceFromPlayerRoomHistory({ persist = false } = {}) {
+  if (!gameState || !Array.isArray(playerRoomHistory)) {
+    renderAdminMaintenanceBanner();
+    return;
+  }
+  const maintenanceMessages = playerRoomHistory
+    .filter((message) => isPlayerRoomAdminMaintenanceMessage(message))
+    .sort((a, b) => (Date.parse(String(a?.createdAt || '').trim()) || 0) - (Date.parse(String(b?.createdAt || '').trim()) || 0));
+  if (!maintenanceMessages.length) {
+    renderAdminMaintenanceBanner();
+    return;
+  }
+  const latest = maintenanceMessages[maintenanceMessages.length - 1];
+  const incoming = normalizeAdminMaintenanceState({
+    maintenanceActive: !!latest.maintenanceActive,
+    maintenanceMessage: latest.maintenanceMessage || latest.text,
+    updatedAt: latest.createdAt,
+    updatedBy: latest.username || 'Admin'
+  });
+  applyAdminMaintenanceState(incoming, { persist, silent: true });
 }
 
 function normalizeAdminNewsIso(value, fallback = '') {
@@ -4162,19 +4365,30 @@ function renderAdminNewsInboxList() {
 function updatePlayerRoomNewsInboxHint() {
   const total = getAdminNewsInboxListFromState().length;
   const unread = countUnreadAdminNews();
+  const inboxBtnText = unread > 0
+    ? `📰 Caixa de notícias (${unread})`
+    : '📰 Caixa de notícias';
+
   if (elements.playerRoomNewsInboxBtn) {
-    elements.playerRoomNewsInboxBtn.textContent = unread > 0
-      ? `📰 Caixa de notícias (${unread})`
-      : '📰 Caixa de notícias';
+    elements.playerRoomNewsInboxBtn.textContent = inboxBtnText;
   }
+  if (elements.heroNewsInboxBtn) {
+    elements.heroNewsInboxBtn.textContent = inboxBtnText;
+  }
+
+  let hintText = 'Sem notícias novas.';
   if (elements.playerRoomNewsInboxHint) {
     if (total <= 0) {
-      elements.playerRoomNewsInboxHint.textContent = 'Sem notícias novas.';
+      hintText = 'Sem notícias novas.';
     } else if (unread > 0) {
-      elements.playerRoomNewsInboxHint.textContent = `${unread} notícia(s) nova(s) para você.`;
+      hintText = `${unread} notícia(s) nova(s) para você.`;
     } else {
-      elements.playerRoomNewsInboxHint.textContent = `${total} notícia(s) salva(s) nas últimas 24 horas.`;
+      hintText = `${total} notícia(s) salva(s) nas últimas 24 horas.`;
     }
+    elements.playerRoomNewsInboxHint.textContent = hintText;
+  }
+  if (elements.heroNewsInboxHint) {
+    elements.heroNewsInboxHint.textContent = hintText;
   }
 }
 
@@ -4235,6 +4449,181 @@ function upsertAdminNewsInboxEntryFromMessage(message = {}, { persist = true } =
   }
   setAdminNewsInboxList(current, { persist, silent: true });
   return { added, entry };
+}
+
+function normalizePlayerRoomBlessOutboxEntry(entry = {}) {
+  const source = entry && typeof entry === 'object' ? entry : {};
+  const messageId = String(source.messageId || source.id || '').trim().slice(0, 120);
+  const targetUserId = String(source.targetUserId || '').trim().slice(0, 120);
+  if (!messageId || !targetUserId) return null;
+
+  const createdAt = normalizeAdminNewsIso(source.createdAt, new Date().toISOString());
+  const createdMs = Date.parse(createdAt);
+  const fallbackExpiresAt = Number.isFinite(createdMs)
+    ? new Date(createdMs + PLAYER_ROOM_BLESS_OUTBOX_TTL_MS).toISOString()
+    : new Date(Date.now() + PLAYER_ROOM_BLESS_OUTBOX_TTL_MS).toISOString();
+  const expiresAt = normalizeAdminNewsIso(source.expiresAt, fallbackExpiresAt);
+
+  return {
+    messageId,
+    targetUserId,
+    targetUsername: String(source.targetUsername || 'Jogador').trim().slice(0, 60) || 'Jogador',
+    senderName: String(source.senderName || source.username || 'Jogador').trim().slice(0, 60) || 'Jogador',
+    text: String(source.text || PLAYER_ROOM_BLESS_EVENT_MESSAGE).trim().slice(0, 260) || PLAYER_ROOM_BLESS_EVENT_MESSAGE,
+    createdAt,
+    expiresAt,
+    attempts: Math.max(0, Math.min(999, Number(source.attempts || 0) || 0)),
+    lastAttemptAt: normalizeAdminNewsIso(source.lastAttemptAt, '')
+  };
+}
+
+function getPlayerRoomBlessOutboxFromState(state = gameState) {
+  if (!state || typeof state !== 'object') return [];
+  const source = Array.isArray(state.playerRoomBlessOutbox) ? state.playerRoomBlessOutbox : [];
+  const nowMs = Date.now();
+  const map = new Map();
+
+  source.forEach((entry) => {
+    const normalized = normalizePlayerRoomBlessOutboxEntry(entry);
+    if (!normalized) return;
+    const expiresMs = Date.parse(String(normalized.expiresAt || '').trim());
+    if (Number.isFinite(expiresMs) && expiresMs <= nowMs) return;
+    const key = String(normalized.messageId || '').trim();
+    if (!key) return;
+    map.set(key, normalized);
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => (Date.parse(a.createdAt || '') || 0) - (Date.parse(b.createdAt || '') || 0))
+    .slice(-PLAYER_ROOM_BLESS_OUTBOX_MAX_ITEMS);
+}
+
+function setPlayerRoomBlessOutbox(nextList = [], { persist = false, silent = true } = {}) {
+  if (!gameState || typeof gameState !== 'object') return;
+  const normalized = (Array.isArray(nextList) ? nextList : [])
+    .map((entry) => normalizePlayerRoomBlessOutboxEntry(entry))
+    .filter(Boolean)
+    .slice(-PLAYER_ROOM_BLESS_OUTBOX_MAX_ITEMS);
+  gameState.playerRoomBlessOutbox = normalized;
+  if (persist && isLoggedIn) {
+    saveGame(!!silent);
+  }
+}
+
+function isPlayerRoomUserOnlineById(userId = '') {
+  const safeUserId = String(userId || '').trim();
+  if (!safeUserId) return false;
+  const list = Array.isArray(playerRoomPresenceProfiles) ? playerRoomPresenceProfiles : [];
+  return list.some((entry) => playerRoomIdEquals(entry?.userId, safeUserId));
+}
+
+function enqueuePlayerRoomBlessOutboxMessage(message = {}, { persist = true } = {}) {
+  if (!gameState || !isPlayerRoomPrivateBlessMessage(message)) return { added: false, entry: null };
+  const normalized = normalizePlayerRoomBlessOutboxEntry({
+    messageId: String(message.id || '').trim(),
+    targetUserId: String(message.targetUserId || '').trim(),
+    targetUsername: String(message.targetUsername || '').trim() || 'Jogador',
+    senderName: String(message.username || getPlayerRoomDisplayName() || 'Jogador').trim() || 'Jogador',
+    text: String(message.text || PLAYER_ROOM_BLESS_EVENT_MESSAGE).trim() || PLAYER_ROOM_BLESS_EVENT_MESSAGE,
+    createdAt: message.createdAt || new Date().toISOString()
+  });
+  if (!normalized) return { added: false, entry: null };
+
+  const current = getPlayerRoomBlessOutboxFromState(gameState);
+  const idx = current.findIndex((entry) => String(entry.messageId || '') === String(normalized.messageId || ''));
+  let added = false;
+  if (idx >= 0) {
+    current[idx] = { ...current[idx], ...normalized };
+  } else {
+    current.push(normalized);
+    added = true;
+  }
+  setPlayerRoomBlessOutbox(current, { persist, silent: true });
+  return { added, entry: normalized };
+}
+
+async function processPlayerRoomBlessOutbox({ force = false, silent = true } = {}) {
+  if (playerRoomBlessOutboxProcessing) return { sent: 0, pending: getPlayerRoomBlessOutboxFromState().length };
+  if (!isLoggedIn || !gameState) return { sent: 0, pending: 0 };
+  if (
+    !playerRoomConnected ||
+    !playerRoomChannel ||
+    typeof SupabaseService === 'undefined' ||
+    typeof SupabaseService.sendPlayerChatMessage !== 'function'
+  ) {
+    return { sent: 0, pending: getPlayerRoomBlessOutboxFromState().length };
+  }
+
+  const now = Date.now();
+  if (!force && (now - playerRoomBlessOutboxLastProcessAt) < 1800) {
+    return { sent: 0, pending: getPlayerRoomBlessOutboxFromState().length };
+  }
+  playerRoomBlessOutboxLastProcessAt = now;
+  playerRoomBlessOutboxProcessing = true;
+
+  try {
+    const current = getPlayerRoomBlessOutboxFromState(gameState);
+    if (!current.length) return { sent: 0, pending: 0 };
+
+    let sent = 0;
+    let changed = false;
+    const next = [];
+
+    for (let idx = 0; idx < current.length; idx += 1) {
+      const entry = current[idx];
+      if (!entry || typeof entry !== 'object') continue;
+
+      const attempts = Math.max(0, Number(entry.attempts || 0) || 0);
+      if (attempts >= PLAYER_ROOM_BLESS_OUTBOX_MAX_ATTEMPTS) {
+        changed = true;
+        continue;
+      }
+
+      if (!isPlayerRoomUserOnlineById(entry.targetUserId)) {
+        next.push(entry);
+        continue;
+      }
+
+      const lastAttemptMs = Date.parse(String(entry.lastAttemptAt || '').trim());
+      if (!force && Number.isFinite(lastAttemptMs) && (now - lastAttemptMs) < PLAYER_ROOM_BLESS_OUTBOX_RETRY_MS) {
+        next.push(entry);
+        continue;
+      }
+
+      const payload = {
+        id: entry.messageId,
+        kind: 'text',
+        text: String(entry.text || PLAYER_ROOM_BLESS_EVENT_MESSAGE).trim() || PLAYER_ROOM_BLESS_EVENT_MESSAGE,
+        privateType: 'blessing',
+        targetUserId: String(entry.targetUserId || '').trim(),
+        targetUsername: String(entry.targetUsername || '').trim() || 'Jogador',
+        createdAt: entry.createdAt || new Date().toISOString()
+      };
+
+      try {
+        await SupabaseService.sendPlayerChatMessage(playerRoomChannel, payload);
+        sent += 1;
+        changed = true;
+      } catch (e) {
+        next.push({
+          ...entry,
+          attempts: attempts + 1,
+          lastAttemptAt: new Date().toISOString()
+        });
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setPlayerRoomBlessOutbox(next, { persist: true, silent: true });
+    }
+    if (sent > 0 && !silent) {
+      showToast(`📨 Mensagem especial entregue para ${sent} jogador(es).`);
+    }
+    return { sent, pending: next.length };
+  } finally {
+    playerRoomBlessOutboxProcessing = false;
+  }
 }
 
 function syncAdminNewsInboxFromPlayerRoomHistory({ persist = false } = {}) {
@@ -4449,6 +4838,7 @@ function buildArenaProfileFromPlayerRoomProfile(profileInput = {}) {
     trophiesCount: profile.trophiesCount,
     streak: profile.streak,
     coins: profile.coins,
+    isRankAuthoritative: false,
     isAdmin: !!profile.isAdmin,
     updatedAt: profile.updatedAt || new Date().toISOString()
   });
@@ -4608,9 +4998,9 @@ function sanitizeArenaProfile(entry = {}, fallback = {}) {
     score: Math.max(0, Number(statsSource.score || 0) || 0)
   };
   const safeLevel = Math.max(1, Number(source.level ?? base.level ?? 1) || 1);
-  const safePowerScore = Math.max(0, Number(source.powerScore ?? base.powerScore ?? stats.score) || stats.score);
-  const safeAchievementsCount = Math.max(0, Number(source.achievementsCount ?? base.achievementsCount ?? 0) || 0);
-  const safeTrophiesCount = Math.max(0, Number(source.trophiesCount ?? base.trophiesCount ?? 0) || 0);
+  const safePowerScore = Math.max(0, Number(source.powerScore ?? source.power_score ?? base.powerScore ?? base.power_score ?? stats.score) || stats.score);
+  const safeAchievementsCount = Math.max(0, Number(source.achievementsCount ?? source.achievements_count ?? base.achievementsCount ?? base.achievements_count ?? 0) || 0);
+  const safeTrophiesCount = Math.max(0, Number(source.trophiesCount ?? source.trophies_count ?? base.trophiesCount ?? base.trophies_count ?? 0) || 0);
   const safeStreak = Math.max(0, Number(source.streak ?? base.streak ?? 0) || 0);
   const safeCoins = Math.max(0, Number(source.coins ?? base.coins ?? 0) || 0);
   const safeUsername = String(source.username || base.username || source.name || base.name || '').trim().slice(0, 60);
@@ -4618,15 +5008,20 @@ function sanitizeArenaProfile(entry = {}, fallback = {}) {
   const inferredAdmin = explicitAdmin || [source.userId, source.username, source.name, source.title, source.rankLabel, base.userId, base.username, base.name]
     .some((raw) => SHOP_ADMIN_HANDLES.some((adminRaw) => isAdminHandleMatch(raw, adminRaw)));
   const safeIsAdmin = !!inferredAdmin;
-  const safeRankingScore = computeArenaGlobalRankScore({
-    level: safeLevel,
-    powerScore: safePowerScore,
-    stats,
-    achievementsCount: safeAchievementsCount,
-    trophiesCount: safeTrophiesCount,
-    streak: safeStreak,
-    coins: safeCoins
-  });
+  const safeIsRankAuthoritative = source.isRankAuthoritative === true || base.isRankAuthoritative === true;
+  const explicitRankingScoreRaw = Number(source.rankingScore ?? source.ranking_score ?? base.rankingScore ?? base.ranking_score);
+  const hasValidExplicitRankingScore = Number.isFinite(explicitRankingScoreRaw) && explicitRankingScoreRaw > 0;
+  const safeRankingScore = hasValidExplicitRankingScore
+    ? Math.max(0, Math.round(explicitRankingScoreRaw))
+    : computeArenaGlobalRankScore({
+      level: safeLevel,
+      powerScore: safePowerScore,
+      stats,
+      achievementsCount: safeAchievementsCount,
+      trophiesCount: safeTrophiesCount,
+      streak: safeStreak,
+      coins: safeCoins
+    });
   const tier = getArenaTierInfo(stats);
   return {
     userId: String(source.userId || base.userId || '').trim().slice(0, 80),
@@ -4641,6 +5036,7 @@ function sanitizeArenaProfile(entry = {}, fallback = {}) {
     trophiesCount: safeTrophiesCount,
     streak: safeStreak,
     coins: safeCoins,
+    isRankAuthoritative: safeIsRankAuthoritative,
     rankingScore: safeRankingScore,
     stats,
     updatedAt: String(source.updatedAt || base.updatedAt || new Date().toISOString()).trim()
@@ -4745,12 +5141,314 @@ function splitArenaLeaderboard(players = arenaPlayers) {
   };
 }
 
+function normalizeRankCloudInventory(rawInventory) {
+  return (rawInventory && typeof rawInventory === 'object' && !Array.isArray(rawInventory))
+    ? rawInventory
+    : {};
+}
+
+function pruneLegacyGlobalRankCacheKeys() {
+  try {
+    (Array.isArray(GLOBAL_RANK_CLOUD_CACHE_LEGACY_KEYS) ? GLOBAL_RANK_CLOUD_CACHE_LEGACY_KEYS : []).forEach((legacyKey) => {
+      const safeKey = String(legacyKey || '').trim();
+      if (!safeKey || safeKey === GLOBAL_RANK_CLOUD_CACHE_KEY) return;
+      localStorage.removeItem(safeKey);
+    });
+  } catch (e) {}
+}
+
+function loadGlobalRankCacheFromLocalStorage() {
+  try {
+    pruneLegacyGlobalRankCacheKeys();
+    const raw = localStorage.getItem(GLOBAL_RANK_CLOUD_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const cacheUpdatedAt = String(parsed?.updatedAt || '').trim();
+    const cacheUpdatedMs = Number.isFinite(Date.parse(cacheUpdatedAt)) ? Date.parse(cacheUpdatedAt) : 0;
+    if (cacheUpdatedMs > 0 && (Date.now() - cacheUpdatedMs) > GLOBAL_RANK_CLOUD_CACHE_MAX_AGE_MS) {
+      return [];
+    }
+    const profiles = Array.isArray(parsed?.profiles) ? parsed.profiles : [];
+    return profiles
+      .map((entry) => sanitizeArenaProfile({ ...(entry || {}), isRankAuthoritative: true }, entry))
+      .filter((entry) => !!String(entry?.userId || '').trim());
+  } catch (e) {
+    return [];
+  }
+}
+
+function persistGlobalRankCacheToLocalStorage(profiles = []) {
+  try {
+    const safe = (Array.isArray(profiles) ? profiles : [])
+      .map((entry) => sanitizeArenaProfile(entry, entry))
+      .filter((entry) => !!String(entry?.userId || '').trim())
+      .slice(0, GLOBAL_RANK_CLOUD_MAX_USERS);
+    localStorage.setItem(GLOBAL_RANK_CLOUD_CACHE_KEY, JSON.stringify({
+      updatedAt: new Date().toISOString(),
+      profiles: safe
+    }));
+  } catch (e) {}
+}
+
+function ensureGlobalRankCacheLoaded() {
+  if (globalRankCloudCacheLoaded) return;
+  globalRankCloudCacheLoaded = true;
+  pruneLegacyGlobalRankCacheKeys();
+  if (Array.isArray(globalRankCloudProfiles) && globalRankCloudProfiles.length) return;
+  const cached = loadGlobalRankCacheFromLocalStorage();
+  if (cached.length) {
+    globalRankCloudProfiles = cached;
+    if (pruneGlobalRankCachesByHiddenUsers()) {
+      persistGlobalRankCacheToLocalStorage(globalRankCloudProfiles);
+    }
+  }
+}
+
+function collectHiddenRankIdsFromCloudRows(rows = []) {
+  const ids = [];
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const inventory = normalizeRankCloudInventory(row?.inventory);
+    const hiddenRaw = inventory?.adminHiddenRankUserIds;
+    if (!Array.isArray(hiddenRaw)) return;
+    hiddenRaw.forEach((rawId) => {
+      const safeId = String(rawId || '').trim();
+      if (safeId) ids.push(safeId);
+    });
+  });
+  return normalizeAdminHiddenRankUserIds(ids, MAX_ADMIN_HIDDEN_RANK_IDS);
+}
+
+function mergeHiddenRankIdsFromCloudRows(rows = []) {
+  const fromCloud = collectHiddenRankIdsFromCloudRows(rows);
+  if (!fromCloud.length) return false;
+
+  const current = getAdminHiddenRankUserIdsFromState(gameState);
+  const merged = normalizeAdminHiddenRankUserIds(
+    [...current, ...fromCloud],
+    MAX_ADMIN_HIDDEN_RANK_IDS
+  );
+  const changed = merged.length !== current.length || merged.some((id, idx) => id !== current[idx]);
+  if (!changed) return false;
+
+  if (gameState && typeof gameState === 'object') {
+    gameState.adminHiddenRankUserIds = merged;
+  }
+  persistAdminHiddenRankUserIdsToStorage(merged);
+  if (adminPanelState?.hiddenProfileIds instanceof Set) {
+    merged.forEach((id) => adminPanelState.hiddenProfileIds.add(id));
+  }
+  pruneGlobalRankCachesByHiddenUsers(new Set(merged));
+  return true;
+}
+
+function buildArenaProfileFromCloudRankProfile(profileRaw = {}) {
+  const source = profileRaw && typeof profileRaw === 'object' ? profileRaw : {};
+  const userId = String(source.id || source.user_id || source.userId || '').trim();
+  if (!userId) return null;
+
+  const inventory = normalizeRankCloudInventory(source.inventory);
+  const isDisabledByAdmin =
+    source.admin_disabled === true ||
+    source.adminDeleted === true ||
+    source.deleted === true ||
+    inventory.adminDisabled === true ||
+    inventory.adminDeleted === true;
+  if (isDisabledByAdmin) return null;
+
+  const rankSnapshot = (inventory.rankSnapshot && typeof inventory.rankSnapshot === 'object' && !Array.isArray(inventory.rankSnapshot))
+    ? inventory.rankSnapshot
+    : {};
+  const level = Math.max(1, Number(source.level ?? rankSnapshot.level ?? 1) || 1);
+  const xp = Math.max(0, Number(source.xp ?? rankSnapshot.xp ?? 0) || 0);
+  const streak = Math.max(0, Number(source.streak ?? rankSnapshot.streak ?? inventory.streak ?? 0) || 0);
+  const achievementsCount = Array.isArray(source.achievements)
+    ? source.achievements.length
+    : (Array.isArray(inventory.achievements)
+      ? inventory.achievements.length
+      : Math.max(0, Number(source.achievements_count ?? source.achievementsCount ?? rankSnapshot.achievementsCount ?? inventory.achievementsCount ?? 0) || 0));
+  const trophiesCount = Array.isArray(source.trophies)
+    ? source.trophies.length
+    : (Array.isArray(inventory.trophies)
+      ? inventory.trophies.length
+      : Math.max(0, Number(source.trophies_count ?? source.trophiesCount ?? rankSnapshot.trophiesCount ?? inventory.trophiesCount ?? 0) || 0));
+  const coins = Math.max(0, Number(rankSnapshot.coins ?? inventory.coins ?? 0) || 0);
+  const explicitPower = Math.max(0, Number(rankSnapshot.powerScore ?? inventory.powerScore ?? source.power_score ?? source.powerScore ?? 0) || 0);
+  const explicitArenaScore = Math.max(0, Number(rankSnapshot.arenaScore ?? source.arena_score ?? source.arenaScore ?? 0) || 0);
+  const explicitRankingScoreRaw = Number(rankSnapshot.rankingScore ?? source.ranking_score ?? source.rankingScore);
+  const hasExplicitRankingScore = Number.isFinite(explicitRankingScoreRaw) && explicitRankingScoreRaw > 0;
+  const derivedPower = explicitPower > 0
+    ? explicitPower
+    : Math.max(
+      0,
+      Math.round((level * 24) + (xp * 0.12) + (achievementsCount * 38) + (trophiesCount * 52) + (streak * 8))
+    );
+  const derivedArenaScore = explicitArenaScore > 0
+    ? explicitArenaScore
+    : Math.max(
+      0,
+      Math.round((level * 28) + (derivedPower * 0.75) + (achievementsCount * 34) + (trophiesCount * 46))
+    );
+
+  return sanitizeArenaProfile({
+    userId,
+    username: String(source.character_name || source.username || '').trim().slice(0, 60),
+    name: String(source.character_name || source.name || 'Jogador').trim().slice(0, 50) || 'Jogador',
+    avatar: String(source.avatar || inventory.avatar || '🧑').trim().slice(0, 10) || '🧑',
+    title: String(source.title || '').trim().slice(0, 60),
+    rankLabel: String(source.title || '').trim().slice(0, 60),
+    level,
+    powerScore: derivedPower,
+    achievementsCount,
+    trophiesCount,
+    streak,
+    coins,
+    isRankAuthoritative: true,
+    rankingScore: hasExplicitRankingScore ? Math.max(0, Math.round(explicitRankingScoreRaw)) : undefined,
+    stats: {
+      score: derivedArenaScore
+    },
+    updatedAt: String(source.updated_at || source.updatedAt || rankSnapshot.updatedAt || inventory.cloudProfileUpdatedAt || source.created_at || source.createdAt || new Date().toISOString()).trim()
+  }, {});
+}
+
+async function refreshGlobalRankProfilesFromCloud({ force = false, silent = true } = {}) {
+  if (!isLoggedIn || !gameState || typeof useSupabase !== 'function' || !useSupabase()) return false;
+  if (typeof SupabaseService === 'undefined' || typeof SupabaseService.listRankProfiles !== 'function') return false;
+  ensureGlobalRankCacheLoaded();
+
+  const now = Date.now();
+  if (!force && (now - globalRankCloudLastFetchAt) < GLOBAL_RANK_CLOUD_REFRESH_MS) {
+    return false;
+  }
+  if (globalRankCloudFetchPromise) {
+    return globalRankCloudFetchPromise;
+  }
+
+  globalRankCloudFetchPromise = (async () => {
+    try {
+      const rows = await SupabaseService.listRankProfiles({ limit: GLOBAL_RANK_CLOUD_MAX_USERS });
+      mergeHiddenRankIdsFromCloudRows(rows);
+      const hiddenUserIds = getAdminHiddenRankUserIdSet();
+      const mapped = (Array.isArray(rows) ? rows : [])
+        .map((profile) => buildArenaProfileFromCloudRankProfile(profile))
+        .filter((entry) => !!(entry && entry.userId))
+        .filter((entry) => !isHiddenFromGlobalRank(entry.userId, hiddenUserIds));
+
+      const previousSig = JSON.stringify((globalRankCloudProfiles || []).map((entry) => ({
+        userId: String(entry?.userId || ''),
+        level: Number(entry?.level || 1) || 1,
+        rankingScore: Number(entry?.rankingScore || 0) || 0,
+        updatedAt: String(entry?.updatedAt || '')
+      })));
+      const nextSig = JSON.stringify(mapped.map((entry) => ({
+        userId: String(entry?.userId || ''),
+        level: Number(entry?.level || 1) || 1,
+        rankingScore: Number(entry?.rankingScore || 0) || 0,
+        updatedAt: String(entry?.updatedAt || '')
+      })));
+
+      const previousProfiles = (Array.isArray(globalRankCloudProfiles) ? globalRankCloudProfiles : [])
+        .filter((entry) => !isHiddenFromGlobalRank(entry?.userId, hiddenUserIds));
+      const previousCount = previousProfiles.length;
+      const likelyRestrictedResponse = mapped.length > 0 && mapped.length <= 2 && previousCount >= 3;
+      if (likelyRestrictedResponse) {
+        // Evita "encolher" o rank quando a nuvem retorna apenas alguns usuários por RLS/permissão,
+        // mas ainda aplica atualização dos usuários recebidos para não ficar com pontuação velha.
+        const mergedById = new Map(previousProfiles
+          .map((entry) => [String(entry?.userId || '').trim(), sanitizeArenaProfile(entry, entry)]));
+        mapped.forEach((entry) => {
+          const key = String(entry?.userId || '').trim();
+          if (!key) return;
+          const nextSafe = sanitizeArenaProfile({ ...(entry || {}), isRankAuthoritative: true }, entry);
+          const prevSafe = mergedById.get(key);
+          if (!prevSafe) {
+            mergedById.set(key, nextSafe);
+            return;
+          }
+          const prevUpdated = Number.isFinite(Date.parse(String(prevSafe.updatedAt || '').trim()))
+            ? Date.parse(String(prevSafe.updatedAt || '').trim())
+            : 0;
+          const nextUpdated = Number.isFinite(Date.parse(String(nextSafe.updatedAt || '').trim()))
+            ? Date.parse(String(nextSafe.updatedAt || '').trim())
+            : 0;
+          if (nextUpdated >= prevUpdated) {
+            mergedById.set(key, nextSafe);
+          }
+        });
+        const merged = Array.from(mergedById.values()).slice(0, GLOBAL_RANK_CLOUD_MAX_USERS);
+        const mergedSig = JSON.stringify(merged.map((entry) => ({
+          userId: String(entry?.userId || ''),
+          level: Number(entry?.level || 1) || 1,
+          rankingScore: Number(entry?.rankingScore || 0) || 0,
+          updatedAt: String(entry?.updatedAt || '')
+        })));
+        globalRankCloudProfiles = merged;
+        persistGlobalRankCacheToLocalStorage(merged);
+        globalRankCloudLastFetchAt = Date.now() - Math.max(0, GLOBAL_RANK_CLOUD_REFRESH_MS - GLOBAL_RANK_CLOUD_FAIL_RETRY_MS);
+        if (previousSig !== mergedSig) {
+          if (typeof updateUI === 'function') {
+            updateUI();
+          } else {
+            renderHeroGlobalRankPanel();
+            renderArenaPlayersList();
+          }
+        }
+        if (!silent) {
+          showToast('⚠️ Ranking parcial da nuvem detectado. Atualizei os usuários recebidos e mantive o restante em cache.');
+        }
+        return false;
+      }
+
+      globalRankCloudProfiles = mapped;
+      globalRankCloudLastFetchAt = Date.now();
+      persistGlobalRankCacheToLocalStorage(mapped);
+
+      if (previousSig !== nextSig) {
+        if (typeof updateUI === 'function') {
+          updateUI();
+        } else {
+          renderHeroGlobalRankPanel();
+          renderArenaPlayersList();
+        }
+      }
+      return true;
+    } catch (error) {
+      globalRankCloudLastFetchAt = Date.now() - Math.max(0, GLOBAL_RANK_CLOUD_REFRESH_MS - GLOBAL_RANK_CLOUD_FAIL_RETRY_MS);
+      const code = String(error?.code || '').trim().toUpperCase();
+      const message = String(error?.message || '').trim();
+      const permissionLike = code === '42501' || message.toLowerCase().includes('permission');
+      if (!silent && !permissionLike) {
+        showToast('⚠️ Não consegui atualizar o ranking global da nuvem agora.');
+      }
+      if (!permissionLike) {
+        console.warn('Falha ao atualizar rank global via nuvem:', error);
+      }
+      return false;
+    } finally {
+      globalRankCloudFetchPromise = null;
+    }
+  })();
+
+  return globalRankCloudFetchPromise;
+}
+
 function buildGlobalRankProfiles() {
+  ensureGlobalRankCacheLoaded();
+  const hiddenUserIds = getAdminHiddenRankUserIdSet();
+  const trustedUserIds = new Set();
+  const rememberTrustedUserId = (entry = {}, fallback = {}) => {
+    const safe = sanitizeArenaProfile(entry, fallback || entry);
+    const userId = String(safe.userId || '').trim();
+    if (!userId) return;
+    if (isHiddenFromGlobalRank(userId, hiddenUserIds)) return;
+    trustedUserIds.add(userId);
+  };
   const unique = new Map();
   const push = (entry = {}, fallback = {}) => {
     const safe = sanitizeArenaProfile(entry, fallback || entry);
     const userId = String(safe.userId || '').trim();
     if (!userId) return;
+    if (isHiddenFromGlobalRank(userId, hiddenUserIds)) return;
 
     const previous = unique.get(userId);
     if (!previous) {
@@ -4758,61 +5456,109 @@ function buildGlobalRankProfiles() {
       return;
     }
 
-    const prevRank = Number(previous.rankingScore || 0) || 0;
-    const nextRank = Number(safe.rankingScore || 0) || 0;
-    if (nextRank > prevRank) {
-      unique.set(userId, safe);
-      return;
-    }
-    if (nextRank < prevRank) return;
-
     const prevUpdated = Number.isFinite(Date.parse(String(previous.updatedAt || '').trim()))
       ? Date.parse(String(previous.updatedAt || '').trim())
       : 0;
     const nextUpdated = Number.isFinite(Date.parse(String(safe.updatedAt || '').trim()))
       ? Date.parse(String(safe.updatedAt || '').trim())
       : 0;
-    if (nextUpdated >= prevUpdated) unique.set(userId, safe);
+
+    const prevAuthoritative = previous.isRankAuthoritative === true;
+    const nextAuthoritative = safe.isRankAuthoritative === true;
+    if (prevAuthoritative !== nextAuthoritative) {
+      const prevRankScore = Number(previous.rankingScore || 0) || 0;
+      const nextRankScore = Number(safe.rankingScore || 0) || 0;
+      if (prevAuthoritative && !nextAuthoritative) {
+        // Só permite local sobrescrever nuvem quando a nuvem está claramente inválida (score zerado).
+        if (prevRankScore <= 0 && nextRankScore > 0 && nextUpdated >= prevUpdated) {
+          unique.set(userId, safe);
+        }
+        return;
+      }
+      if (!prevAuthoritative && nextAuthoritative) {
+        // Nuvem ganha prioridade, mas não derruba um score válido para 0.
+        if (nextRankScore > 0 || prevRankScore <= 0) {
+          unique.set(userId, safe);
+          return;
+        }
+        if (nextUpdated >= (prevUpdated + 15000)) {
+          unique.set(userId, safe);
+        }
+        return;
+      }
+    }
+
+    if (nextUpdated > prevUpdated) {
+      unique.set(userId, safe);
+      return;
+    }
+    if (nextUpdated < prevUpdated) return;
+
+    const prevRank = Number(previous.rankingScore || 0) || 0;
+    const nextRank = Number(safe.rankingScore || 0) || 0;
+    if (nextRank >= prevRank) unique.set(userId, safe);
   };
 
   const selfProfile = getArenaSelfProfile();
+  rememberTrustedUserId(selfProfile, selfProfile);
   push(selfProfile, selfProfile);
 
-  (Array.isArray(arenaPlayers) ? arenaPlayers : []).forEach((entry) => push(entry, entry));
+  (Array.isArray(arenaPlayers) ? arenaPlayers : []).forEach((entry) => {
+    rememberTrustedUserId(entry, entry);
+    push(entry, entry);
+  });
 
   (Array.isArray(playerRoomPresenceProfiles) ? playerRoomPresenceProfiles : []).forEach((profile) => {
     const arenaProfile = buildArenaProfileFromPlayerRoomProfile(profile);
-    if (arenaProfile) push(arenaProfile, arenaProfile);
-  });
-
-  (Array.isArray(playerRoomHistory) ? playerRoomHistory : []).forEach((message) => {
-    const profile = alignPlayerRoomProfileToMessage(message, message?.profile);
-    const arenaProfile = buildArenaProfileFromPlayerRoomProfile(profile);
-    if (arenaProfile) push(arenaProfile, arenaProfile);
+    if (!arenaProfile) return;
+    rememberTrustedUserId(arenaProfile, arenaProfile);
+    push(arenaProfile, arenaProfile);
   });
 
   const mergeMatchProfiles = (match = {}) => {
     const profiles = match && typeof match === 'object' && match.profiles && typeof match.profiles === 'object'
       ? match.profiles
       : {};
-    Object.values(profiles).forEach((entry) => push(entry, entry));
+    Object.values(profiles).forEach((entry) => {
+      rememberTrustedUserId(entry, entry);
+      push(entry, entry);
+    });
   };
   mergeMatchProfiles(arenaCurrentMatch);
   mergeMatchProfiles(pokerOnlineMatch);
+
+  (Array.isArray(globalRankCloudProfiles) ? globalRankCloudProfiles : []).forEach((entry) => {
+    rememberTrustedUserId(entry, entry);
+    push(entry, entry);
+  });
+
+  (Array.isArray(playerRoomHistory) ? playerRoomHistory : []).forEach((message) => {
+    const profile = alignPlayerRoomProfileToMessage(message, message?.profile);
+    const arenaProfile = buildArenaProfileFromPlayerRoomProfile(profile);
+    const historyUserId = String(arenaProfile?.userId || '').trim();
+    if (!historyUserId) return;
+    if (!trustedUserIds.has(historyUserId)) return;
+    push(arenaProfile, arenaProfile);
+  });
 
   return Array.from(unique.values());
 }
 
 function getArenaGlobalRankSnapshot() {
+  try {
+    refreshGlobalRankProfilesFromCloud({ force: false, silent: true });
+  } catch (e) {}
   const selfProfile = getArenaSelfProfile();
   const selfSanitized = sanitizeArenaProfile(selfProfile, selfProfile);
   const split = splitArenaLeaderboard(buildGlobalRankProfiles());
+  const fullBoard = Array.isArray(split.full) ? split.full : [];
   const leaderboard = split.competitive;
   const myUserId = String(selfSanitized.userId || '').trim();
   const myEntry = leaderboard.find((player) => String(player?.userId || '') === myUserId) || null;
   const selfAdminEntry = split.admins.find((player) => String(player?.userId || '') === myUserId) || null;
+  const anySelfEntry = fullBoard.find((player) => String(player?.userId || '') === myUserId) || null;
   const isSelfAdmin = !!selfSanitized.isAdmin;
-  const rankScore = Number(myEntry?.rankingScore ?? selfSanitized.rankingScore ?? 0) || 0;
+  const rankScore = Number(anySelfEntry?.rankingScore ?? selfAdminEntry?.rankingScore ?? myEntry?.rankingScore ?? selfSanitized.rankingScore ?? 0) || 0;
   const rankPosition = isSelfAdmin ? 0 : (Number(myEntry?.rankPosition || 0) || 0);
   const hasSharedBoard = leaderboard.length > 1;
   return {
@@ -5059,38 +5805,46 @@ function renderArenaPlayersList() {
   if (!host) return;
   host.innerHTML = '';
 
-  if (!arenaConnected) {
-    host.innerHTML = '<div class="small">Conecte-se à Arena para ver os jogadores na internet.</div>';
-    return;
-  }
+  refreshGlobalRankProfilesFromCloud({ force: false, silent: true }).catch(() => {});
 
   const myUserId = getPlayerRoomCurrentUserId();
-  const split = splitArenaLeaderboard(arenaPlayers);
+  const split = splitArenaLeaderboard(buildGlobalRankProfiles());
   const leaderboard = split.competitive;
   const adminBoard = split.admins;
   const selfArenaProfile = getArenaSelfProfile();
   const selfIsAdmin = !!sanitizeArenaProfile(selfArenaProfile, selfArenaProfile).isAdmin;
   const myEntry = leaderboard.find((player) => String(player?.userId || '') === String(myUserId || ''));
-  const onlinePlayers = leaderboard.filter((player) => String(player?.userId || '') !== String(myUserId || ''));
+  const displayPlayers = leaderboard;
 
   const summary = document.createElement('div');
   summary.className = 'small arena-rank-summary';
   summary.textContent = selfIsAdmin
-    ? `🛡️ Admin fora da competição • ${leaderboard.length} jogador(es) disputando`
+    ? `🛡️ Admin fora da competição • ${leaderboard.length} jogador(es) no ranking${arenaConnected ? ' • sala on-line' : ''}`
     : (myEntry
     ? `🏅 Seu rank geral: #${myEntry.rankPosition} de ${leaderboard.length} (nível, poder, conquistas e troféus)`
-    : `🏅 Ranking geral online com ${leaderboard.length} jogador(es)`);
+    : `🏅 Ranking geral com ${leaderboard.length} jogador(es)${arenaConnected ? ' on-line agora' : ''}`);
   host.appendChild(summary);
 
-  if (!onlinePlayers.length) {
+  if (!leaderboard.length) {
     const empty = document.createElement('div');
     empty.className = 'small';
-    empty.textContent = 'Nenhum adversário conectado agora.';
+    empty.textContent = 'Sem jogadores no ranking global ainda.';
     host.appendChild(empty);
     return;
   }
 
-  onlinePlayers.forEach((player) => {
+  if (!displayPlayers.length) {
+    const empty = document.createElement('div');
+    empty.className = 'small';
+    empty.textContent = arenaConnected
+      ? 'Nenhum adversário conectado agora.'
+      : 'Sem adversários on-line agora, mas o ranking global já foi carregado.';
+    host.appendChild(empty);
+    return;
+  }
+
+  displayPlayers.forEach((player) => {
+    const isSelf = String(player?.userId || '') === String(myUserId || '');
     const tier = getArenaTierInfo(player.stats || {});
     const row = document.createElement('div');
     row.className = 'arena-player-row';
@@ -5098,16 +5852,21 @@ function renderArenaPlayersList() {
     const left = document.createElement('div');
     left.className = 'arena-player-main';
     left.innerHTML = `
-      <div class="arena-player-name"><span class="arena-rank-badge">#${Number(player.rankPosition || 0)}</span> ${player.avatar} ${player.name}</div>
+      <div class="arena-player-name"><span class="arena-rank-badge">#${Number(player.rankPosition || 0)}</span> ${player.avatar} ${player.name}${isSelf ? ' (você)' : ''}</div>
       <div class="arena-player-meta">${tier.icon} ${tier.label} • Nível ${player.level} • Poder ${Number(player?.powerScore || 0).toLocaleString('pt-BR')} • Conq ${Number(player?.achievementsCount || 0)} • Trof ${Number(player?.trophiesCount || 0)} • Rank ${Number(player?.rankingScore || 0).toLocaleString('pt-BR')}</div>
     `;
 
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'ghost';
-    btn.textContent = 'Desafiar';
-    btn.disabled = !!arenaCurrentMatch;
+    btn.textContent = isSelf ? 'Você' : (arenaConnected ? 'Desafiar' : 'Offline');
+    btn.disabled = isSelf || !!arenaCurrentMatch || !arenaConnected;
     btn.addEventListener('click', () => {
+      if (isSelf) return;
+      if (!arenaConnected) {
+        showToast('📡 Conecte-se à sala para desafiar este jogador.');
+        return;
+      }
       challengeArenaPlayer(player.userId).catch((e) => {
         console.warn('Falha ao desafiar jogador da arena:', e);
         showToast('❌ Não consegui enviar o desafio agora.');
@@ -7642,13 +8401,32 @@ function pokerOnlineGetUnfoldedPlayers(match = null) {
 }
 
 function pokerOnlineGetNextActivePlayer(match = null, fromUserId = '', { includeCurrent = false } = {}) {
-  const activePlayers = pokerOnlineGetUnfoldedPlayers(match);
+  const roster = Array.isArray(match?.players)
+    ? match.players.map((entry) => String(entry || '').trim()).filter(Boolean)
+    : [];
+  if (!roster.length) return '';
+
+  const folded = (match?.folded && typeof match.folded === 'object') ? match.folded : {};
+  const activePlayers = roster.filter((userId) => !folded[userId]);
   if (!activePlayers.length) return '';
+
   const safeFrom = String(fromUserId || '').trim();
-  const currentIdx = activePlayers.indexOf(safeFrom);
-  if (currentIdx < 0) return activePlayers[0];
-  const offset = includeCurrent ? 0 : 1;
-  return activePlayers[(currentIdx + offset) % activePlayers.length] || activePlayers[0];
+  const fromIdx = roster.indexOf(safeFrom);
+  if (fromIdx < 0) {
+    return activePlayers[0] || '';
+  }
+
+  const startOffset = includeCurrent ? 0 : 1;
+  const maxSteps = roster.length + startOffset;
+  for (let step = startOffset; step < maxSteps; step += 1) {
+    const idx = (fromIdx + step) % roster.length;
+    const candidate = String(roster[idx] || '').trim();
+    if (!candidate) continue;
+    if (folded[candidate]) continue;
+    return candidate;
+  }
+
+  return activePlayers[0] || '';
 }
 
 function pokerOnlineEnsureTurnUser(match = null) {
@@ -7812,13 +8590,10 @@ function renderPokerOnlinePlayers() {
     elements.pokerOnlinePlayersList.innerHTML = '';
     return;
   }
-  if (!arenaConnected) {
-    elements.pokerOnlinePlayersList.innerHTML = '<div class="small">Conecte para ver jogadores on-line.</div>';
-    return;
-  }
+  refreshGlobalRankProfilesFromCloud({ force: false, silent: true }).catch(() => {});
 
   const myUserId = getPokerCurrentUserId();
-  const split = splitArenaLeaderboard(arenaPlayers);
+  const split = splitArenaLeaderboard(buildGlobalRankProfiles());
   const leaderboard = split.competitive;
   const adminBoard = split.admins;
   const pokerCandidates = [
@@ -7828,29 +8603,42 @@ function renderPokerOnlinePlayers() {
   const selfArenaProfile = getArenaSelfProfile();
   const selfIsAdmin = !!sanitizeArenaProfile(selfArenaProfile, selfArenaProfile).isAdmin;
   const myEntry = leaderboard.find((player) => String(player?.userId || '') === String(myUserId || ''));
-  const onlinePlayers = pokerCandidates.filter((player) => String(player?.userId || '') !== String(myUserId || ''));
+  const displayPlayers = pokerCandidates;
 
   const summary = document.createElement('div');
   summary.className = 'small poker-online-rank-summary';
   summary.textContent = selfIsAdmin
-    ? `🛡️ Admin fora da competição • ${leaderboard.length} jogador(es) disputando • Mesa até ${POKER_ONLINE_MAX_PLAYERS}`
+    ? `🛡️ Admin fora da competição • ${leaderboard.length} jogador(es) no ranking • Mesa até ${POKER_ONLINE_MAX_PLAYERS}${arenaConnected ? '' : ' • sala offline'}`
     : (myEntry
     ? `🏅 Seu rank geral: #${myEntry.rankPosition} de ${leaderboard.length} (nível, poder, conquistas e troféus) • Mesa até ${POKER_ONLINE_MAX_PLAYERS}`
-    : `🏅 Ranking geral online: ${leaderboard.length} jogador(es) • Mesa até ${POKER_ONLINE_MAX_PLAYERS}`);
+    : `🏅 Ranking geral: ${leaderboard.length} jogador(es) • Mesa até ${POKER_ONLINE_MAX_PLAYERS}${arenaConnected ? ' • sala online' : ' • sala offline'}`);
 
-  if (!onlinePlayers.length) {
+  if (!leaderboard.length) {
     elements.pokerOnlinePlayersList.innerHTML = '';
     elements.pokerOnlinePlayersList.appendChild(summary);
     const empty = document.createElement('div');
     empty.className = 'small';
-    empty.textContent = 'Nenhum jogador online no momento.';
+    empty.textContent = 'Sem jogadores no ranking global ainda.';
+    elements.pokerOnlinePlayersList.appendChild(empty);
+    return;
+  }
+
+  if (!displayPlayers.length) {
+    elements.pokerOnlinePlayersList.innerHTML = '';
+    elements.pokerOnlinePlayersList.appendChild(summary);
+    const empty = document.createElement('div');
+    empty.className = 'small';
+    empty.textContent = arenaConnected
+      ? 'Nenhum jogador online no momento.'
+      : 'Sem jogadores online agora, mas o ranking global já foi carregado.';
     elements.pokerOnlinePlayersList.appendChild(empty);
     return;
   }
 
   elements.pokerOnlinePlayersList.innerHTML = '';
   elements.pokerOnlinePlayersList.appendChild(summary);
-  onlinePlayers.forEach((player) => {
+  displayPlayers.forEach((player) => {
+    const isSelf = String(player?.userId || '') === String(myUserId || '');
     const isAdminPlayer = !!player?.isAdmin;
     const row = document.createElement('div');
     row.className = 'poker-online-player-row';
@@ -7864,16 +8652,21 @@ function renderPokerOnlinePlayers() {
       ? 'Admin • '
       : `Nível ${Number(player.level || 1)} • Poder ${Number(player?.powerScore || 0).toLocaleString('pt-BR')} • Conq ${Number(player?.achievementsCount || 0)} • Trof ${Number(player?.trophiesCount || 0)} • Rank ${Number(player?.rankingScore || 0).toLocaleString('pt-BR')} • `;
     left.innerHTML = `
-      <div class="poker-online-player-name">${rankBadge} ${player.avatar || '🧑'} ${player.name || 'Jogador'}</div>
+      <div class="poker-online-player-name">${rankBadge} ${player.avatar || '🧑'} ${player.name || 'Jogador'}${isSelf ? ' (você)' : ''}</div>
       <div class="poker-online-player-meta">${metaPrefix}On-line</div>
     `;
 
     const inviteBtn = document.createElement('button');
     inviteBtn.type = 'button';
     inviteBtn.className = 'ghost';
-    inviteBtn.textContent = 'Chamar';
-    inviteBtn.disabled = !!(pokerOnlineMatch && String(pokerOnlineMatch.status || '') === 'active');
+    inviteBtn.textContent = isSelf ? 'Você' : (arenaConnected ? 'Chamar' : 'Offline');
+    inviteBtn.disabled = isSelf || !!(pokerOnlineMatch && String(pokerOnlineMatch.status || '') === 'active') || !arenaConnected;
     inviteBtn.addEventListener('click', () => {
+      if (isSelf) return;
+      if (!arenaConnected) {
+        showToast('📡 Conecte-se à sala para enviar convite.');
+        return;
+      }
       challengePokerOnlinePlayer(player.userId).catch((e) => {
         console.warn('Falha ao desafiar Poker Online:', e);
         showToast('❌ Não consegui enviar o convite.');
@@ -8744,6 +9537,15 @@ function ensurePokerState() {
       losses: Math.max(0, Number(saved.losses || 0) || 0),
       robotCoinsExchanged: normalizePokerRobotCoinsExchanged(saved.robotCoinsExchanged, 0),
       difficulty: normalizePokerDifficulty(saved.difficulty || 'normal'),
+      lastCpuDelta: Number.isFinite(Number(saved.lastCpuDelta))
+        ? Math.round(Number(saved.lastCpuDelta))
+        : 0,
+      lastCpuOutcome: (() => {
+        const safe = String(saved.lastCpuOutcome || '').trim().toLowerCase();
+        if (safe === 'win' || safe === 'loss' || safe === 'tie' || safe === 'idle') return safe;
+        return 'idle';
+      })(),
+      handStartCpuChips: normalizePokerChipValue(saved.cpuChips, POKER_CPU_START_CHIPS),
       deck: [],
       community: [],
       playerCards: [],
@@ -8781,7 +9583,13 @@ function persistPokerState() {
     wins: Math.max(0, Number(ps.wins || 0) || 0),
     losses: Math.max(0, Number(ps.losses || 0) || 0),
     robotCoinsExchanged: normalizePokerRobotCoinsExchanged(ps.robotCoinsExchanged, 0),
-    difficulty: normalizePokerDifficulty(ps.difficulty || 'normal')
+    difficulty: normalizePokerDifficulty(ps.difficulty || 'normal'),
+    lastCpuDelta: Number.isFinite(Number(ps.lastCpuDelta)) ? Math.round(Number(ps.lastCpuDelta)) : 0,
+    lastCpuOutcome: (() => {
+      const safe = String(ps.lastCpuOutcome || '').trim().toLowerCase();
+      if (safe === 'win' || safe === 'loss' || safe === 'tie' || safe === 'idle') return safe;
+      return 'idle';
+    })()
   };
 }
 
@@ -9100,6 +9908,10 @@ function renderPoker() {
     : opponentBet;
   const playerChips = onlineMatch ? Math.max(0, Number(onlineMatch.chips?.[myUserId] || 0) || 0) : Math.max(0, Number(ps.playerChips || 0) || 0);
   const opponentChips = onlineMatch ? Math.max(0, Number(onlineMatch.chips?.[opponentUserId] || 0) || 0) : Math.max(0, Number(ps.cpuChips || 0) || 0);
+  const cpuRoundStart = Math.max(0, Number(ps.handStartCpuChips || opponentChips) || opponentChips);
+  const cpuRoundDeltaLive = Math.round(opponentChips - cpuRoundStart);
+  const cpuLastDelta = Math.round(Number(ps.lastCpuDelta || 0) || 0);
+  const cpuLastOutcome = String(ps.lastCpuOutcome || 'idle').trim().toLowerCase();
   const actionText = onlineMatch ? String(onlineMatch.actionText || '') : String(ps.actionText || '');
   const call = onlineMatch ? pokerOnlineCallAmount(onlineMatch, myUserId) : pokerCallAmount(ps);
   const bankrollLabel = onlineMatch ? 'Moedas' : 'Fichas';
@@ -9124,6 +9936,25 @@ function renderPoker() {
   }
   if (elements.pokerPlayerChips) elements.pokerPlayerChips.textContent = `${bankrollLabel}: ${playerChips.toLocaleString('pt-BR')}`;
   if (elements.pokerCpuChips) elements.pokerCpuChips.textContent = `${bankrollLabel}: ${opponentChips.toLocaleString('pt-BR')}`;
+  if (elements.pokerCpuCoinsInfo) {
+    if (onlineMatch) {
+      elements.pokerCpuCoinsInfo.textContent = `Rival online: ${opponentChips.toLocaleString('pt-BR')} moedas`;
+    } else if (active) {
+      const signal = cpuRoundDeltaLive > 0
+        ? `+${cpuRoundDeltaLive.toLocaleString('pt-BR')}`
+        : cpuRoundDeltaLive < 0
+          ? `-${Math.abs(cpuRoundDeltaLive).toLocaleString('pt-BR')}`
+          : '0';
+      elements.pokerCpuCoinsInfo.textContent = `CPU nesta mão: ${signal} • saldo ${opponentChips.toLocaleString('pt-BR')}`;
+    } else {
+      let prefix = 'CPU último resultado: ';
+      if (cpuLastOutcome === 'win') prefix += `ganhou +${Math.abs(cpuLastDelta).toLocaleString('pt-BR')}`;
+      else if (cpuLastOutcome === 'loss') prefix += `perdeu -${Math.abs(cpuLastDelta).toLocaleString('pt-BR')}`;
+      else if (cpuLastOutcome === 'tie') prefix += 'empatou (0)';
+      else prefix += '--';
+      elements.pokerCpuCoinsInfo.textContent = `${prefix} • saldo ${opponentChips.toLocaleString('pt-BR')}`;
+    }
+  }
   if (elements.pokerPlayerBet) elements.pokerPlayerBet.textContent = `Aposta: ${playerBet.toLocaleString('pt-BR')}`;
   if (elements.pokerCpuBet) elements.pokerCpuBet.textContent = `Aposta: ${opponentBet.toLocaleString('pt-BR')}`;
   if (elements.pokerActionText) elements.pokerActionText.textContent = actionText;
@@ -9262,6 +10093,7 @@ function pokerStartHand() {
   if (ps.cpuChips < POKER_MIN_BUYIN_CHIPS) {
     ps.cpuChips = POKER_CPU_START_CHIPS;
   }
+  ps.handStartCpuChips = Math.max(0, Number(ps.cpuChips || 0) || 0);
   if (!canStartOfflinePokerHand(ps)) {
     const missing = Math.max(0, POKER_MIN_BUYIN_CHIPS - ps.playerChips);
     ps.actionText = `Você precisa de fichas para jogar. Compre no painel da mesa (${missing > 0 ? `faltam ${missing}` : 'mínimo atingido'}).`;
@@ -9357,6 +10189,21 @@ function pokerSettleHand(ps, result = 'tie', reason = '') {
     ps.playerChips += half;
     ps.cpuChips += (ps.pot - half);
     ps.actionText = reason || 'Empate na rodada.';
+  }
+  const cpuStart = Math.max(
+    0,
+    Number.isFinite(Number(ps.handStartCpuChips))
+      ? Number(ps.handStartCpuChips)
+      : Number(ps.cpuChips || 0)
+  );
+  const cpuEnd = Math.max(0, Number(ps.cpuChips || 0) || 0);
+  ps.lastCpuDelta = Math.round(cpuEnd - cpuStart);
+  if (ps.lastCpuDelta > 0) {
+    ps.lastCpuOutcome = 'win';
+  } else if (ps.lastCpuDelta < 0) {
+    ps.lastCpuOutcome = 'loss';
+  } else {
+    ps.lastCpuOutcome = 'tie';
   }
   if (winnerName) {
     triggerPokerWinnerUniverseEvent(
@@ -10127,6 +10974,12 @@ function normalizePlayerRoomMessage(entry = {}) {
   const inviteGame = String(entry.inviteGame || '').trim().toLowerCase().slice(0, 32);
   const inviteTargetTab = String(entry.inviteTargetTab || '').trim().toLowerCase().slice(0, 24);
   const inviteSessionId = String(entry.inviteSessionId || '').trim().slice(0, 80);
+  const maintenanceActive = entry.maintenanceActive === true
+    || entry.maintenanceActive === 'true'
+    || Number(entry.maintenanceActive) === 1;
+  const maintenanceMessage = sanitizeAdminMaintenanceText(
+    entry.maintenanceMessage || entry.text || ''
+  );
   const adminNewsExpiresAt = normalizeAdminNewsIso(
     entry.adminNewsExpiresAt,
     normalizeAdminNewsIso(
@@ -10166,6 +11019,8 @@ function normalizePlayerRoomMessage(entry = {}) {
     inviteGame,
     inviteTargetTab,
     inviteSessionId,
+    maintenanceActive: kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND ? maintenanceActive : false,
+    maintenanceMessage: kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND ? maintenanceMessage : '',
     adminNewsExpiresAt: kind === PLAYER_ROOM_ADMIN_NEWS_KIND ? adminNewsExpiresAt : '',
     userId: String(entry.userId || ''),
     username: String(entry.username || 'Jogador').trim().slice(0, 50) || 'Jogador',
@@ -10186,6 +11041,12 @@ function isValidPlayerRoomMessage(message = {}) {
   if (message.kind === 'call') return !!String(message.callSessionId || '').trim();
   if (message.kind === 'poker_invite') return !!String(message.text || '').trim() || String(message.inviteGame || '') === 'poker_online';
   if (message.kind === PLAYER_ROOM_ADMIN_NEWS_KIND) return !!sanitizeAdminNewsText(message.text || '');
+  if (message.kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND) {
+    if (message.maintenanceActive) {
+      return !!sanitizeAdminMaintenanceText(message.maintenanceMessage || message.text || '');
+    }
+    return true;
+  }
   return !!String(message.text || '').trim();
 }
 
@@ -12640,6 +13501,7 @@ function renderPlayerRoomMessages() {
     if (!isPlayerRoomBlessMessageVisibleForViewer(msg, myUserId)) return;
     if (isPlayerRoomPrivateBlessMessage(msg)) return;
     if (isPlayerRoomAdminNewsMessage(msg)) return;
+    if (isPlayerRoomAdminMaintenanceMessage(msg)) return;
 
     const card = document.createElement('div');
     card.className = 'room-message';
@@ -13014,6 +13876,11 @@ function getPlayerRoomNotificationPreview(message = {}) {
   if (kind === 'sticker') return `${message?.stickerEmoji || '😀'} ${message?.stickerLabel || 'Figurinha'}`;
   if (kind === 'poker_invite') return text || '🃏 Convite para Poker online';
   if (kind === PLAYER_ROOM_ADMIN_NEWS_KIND) return text || '📰 Nova notícia do admin';
+  if (kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND) {
+    return message?.maintenanceActive
+      ? (text || '🛠️ Modo manutenção ativado pelo admin')
+      : (text || '✅ Modo manutenção desativado');
+  }
   if (kind === 'call') return text || '📞 Atualização de ligação da sala';
   if (text) return text.slice(0, 180);
   return 'Nova mensagem na sala';
@@ -13200,10 +14067,24 @@ function appendPlayerRoomMessage(message) {
   savePlayerRoomHistory();
   renderPlayerRoomMessages();
   handlePlayerRoomAdminNewsMessage(normalized);
+  handlePlayerRoomAdminMaintenanceMessage(normalized);
 
   if (isPlayerRoomPrivateBlessMessage(normalized)) {
     const myUserId = getPlayerRoomCurrentUserId();
     if (resolvePlayerRoomBlessAudienceForViewer(normalized, myUserId) === 'target') {
+      const blessCreatedMs = Date.parse(String(normalized.createdAt || '').trim());
+      const blessExpiresAt = Number.isFinite(blessCreatedMs)
+        ? new Date(blessCreatedMs + PLAYER_ROOM_ADMIN_NEWS_TTL_MS).toISOString()
+        : new Date(Date.now() + PLAYER_ROOM_ADMIN_NEWS_TTL_MS).toISOString();
+      upsertAdminNewsInboxEntryFromMessage({
+        id: `bless-${String(normalized.id || '').trim() || Date.now()}`,
+        text: String(normalized.text || PLAYER_ROOM_BLESS_EVENT_MESSAGE).trim() || PLAYER_ROOM_BLESS_EVENT_MESSAGE,
+        userId: normalized.userId,
+        username: normalized.username || 'Jogador',
+        createdAt: normalized.createdAt || new Date().toISOString(),
+        adminNewsExpiresAt: blessExpiresAt
+      }, { persist: true });
+
       setTimeout(() => {
         triggerPlayerRoomBlessAcceptedEvent({
           messageId: String(normalized.id || '').trim(),
@@ -13260,6 +14141,7 @@ function onPlayerRoomStatus(status, meta = {}) {
     clearPlayerRoomReconnectTimer();
     setPlayerRoomStatus('Na internet', 'online');
     syncPlayerRoomPresenceProfile({ force: true });
+    processPlayerRoomBlessOutbox({ force: false, silent: true }).catch(() => {});
     return;
   }
 
@@ -13271,6 +14153,7 @@ function onPlayerRoomStatus(status, meta = {}) {
     setPlayerRoomStatus(label, 'online');
     renderHeroGlobalRankPanel();
     renderArenaStatsSummary();
+    processPlayerRoomBlessOutbox({ force: false, silent: true }).catch(() => {});
     return;
   }
 
@@ -13428,14 +14311,18 @@ async function ensurePlayerRoomConnection({ silent = true, force = false } = {})
   return playerRoomJoinPromise;
 }
 
-async function sendPlayerRoomPayload(payload, { toastFail = '❌ Não consegui enviar na sala.' } = {}) {
+async function sendPlayerRoomPayload(payload, {
+  toastFail = '❌ Não consegui enviar na sala.',
+  returnMessage = false,
+  silentFail = false
+} = {}) {
   if (!isLoggedIn) {
     showToast('⚠️ Faça login para usar a sala.');
-    return false;
+    return returnMessage ? null : false;
   }
 
   const connected = await ensurePlayerRoomConnection({ silent: false });
-  if (!connected || !playerRoomChannel) return false;
+  if (!connected || !playerRoomChannel) return returnMessage ? null : false;
 
   const message = normalizePlayerRoomMessage({
     ...payload,
@@ -13448,7 +14335,7 @@ async function sendPlayerRoomPayload(payload, { toastFail = '❌ Não consegui e
 
   if (!isValidPlayerRoomMessage(message)) {
     showToast('⚠️ Conteúdo inválido para envio.');
-    return false;
+    return returnMessage ? null : false;
   }
 
   appendPlayerRoomMessage(message);
@@ -13456,11 +14343,21 @@ async function sendPlayerRoomPayload(payload, { toastFail = '❌ Não consegui e
 
   try {
     await SupabaseService.sendPlayerChatMessage(playerRoomChannel, message);
-    return true;
+    return returnMessage ? message : true;
   } catch (e) {
     console.warn('Falha ao enviar payload da sala:', e);
-    showToast(toastFail);
-    return false;
+    try {
+      const reconnected = await ensurePlayerRoomConnection({ force: true, silent: true });
+      if (reconnected && playerRoomChannel) {
+        await SupabaseService.sendPlayerChatMessage(playerRoomChannel, message);
+        showToast('✅ Mensagem enviada após reconexão automática.');
+        return returnMessage ? message : true;
+      }
+    } catch (retryError) {
+      console.warn('Falha no reenvio após reconexão da sala:', retryError);
+    }
+    if (!silentFail) showToast(toastFail);
+    return returnMessage ? null : false;
   }
 }
 
@@ -13838,17 +14735,32 @@ async function sendPlayerRoomBlessing() {
 
   const targetName = String(target.username || 'Jogador').trim() || 'Jogador';
   const text = PLAYER_ROOM_BLESS_EVENT_MESSAGE;
+  const blessMessageId = `bless-${now}-${Math.random().toString(36).slice(2, 8)}`;
+  const blessCreatedAt = new Date().toISOString();
 
-  const sent = await sendPlayerRoomPayload({
+  const sentMessage = await sendPlayerRoomPayload({
+    id: blessMessageId,
+    createdAt: blessCreatedAt,
     kind: 'text',
     text,
     privateType: 'blessing',
     targetUserId: target.userId,
     targetUsername: targetName
-  }, { toastFail: '❌ Nao consegui enviar a mensagem de forca.' });
+  }, {
+    toastFail: '❌ Nao consegui enviar a mensagem de forca.',
+    returnMessage: true
+  });
 
-  if (sent) {
+  if (sentMessage) {
     playerRoomBlessLastSentAt = now;
+
+    const targetOnline = isPlayerRoomUserOnlineById(target.userId);
+    if (!targetOnline) {
+      enqueuePlayerRoomBlessOutboxMessage(sentMessage, { persist: true });
+      showToast(`📨 ${targetName} está offline. Vou entregar quando ele voltar ou na caixa de correio.`);
+      return;
+    }
+
     showToast(`✨ Mensagem de forca enviada para ${targetName}.`);
   }
 }
@@ -14310,9 +15222,11 @@ function bootstrapPlayerRoomUI() {
   updateArenaMusicButtonUI();
   loadPlayerRoomHistory();
   syncAdminNewsInboxFromPlayerRoomHistory({ persist: true });
+  syncAdminMaintenanceFromPlayerRoomHistory({ persist: true });
   purgeExpiredAdminNewsInbox({ persist: false, silent: true });
   renderPlayerRoomMessages();
   updatePlayerRoomNewsInboxHint();
+  renderAdminMaintenanceBanner();
   setPlayerRoomStatus(isLoggedIn ? 'Conectando...' : 'Faça login para entrar', isLoggedIn ? 'connecting' : 'offline');
   renderPlayerRoomEmojiPanel();
   renderPlayerRoomStickerPanel();
@@ -14682,6 +15596,11 @@ function bootstrapPlayerRoomUI() {
 
   if (elements.playerRoomNewsInboxBtn) {
     elements.playerRoomNewsInboxBtn.addEventListener('click', () => {
+      openAdminNewsInboxModal();
+    });
+  }
+  if (elements.heroNewsInboxBtn) {
+    elements.heroNewsInboxBtn.addEventListener('click', () => {
       openAdminNewsInboxModal();
     });
   }
@@ -17297,6 +18216,7 @@ function showAuthModal() {
   if (mobileFab) mobileFab.classList.add('hidden');
   if (mobileHeader) mobileHeader.style.display = 'none';
   updateAdminPanelVisibility();
+  syncGlobalHelpVisibility();
 }
 
 function hideAuthModal() {
@@ -17310,6 +18230,131 @@ function hideAuthModal() {
   if (mobileFab) mobileFab.classList.remove('hidden');
   if (mobileHeader) mobileHeader.style.display = '';
   updateAdminPanelVisibility();
+  syncGlobalHelpVisibility();
+}
+
+function buildAppIntroStorageKey() {
+  const candidates = [
+    String(currentAuthUserId || '').trim(),
+    String(getCurrentSessionEmail() || '').trim(),
+    String(normalizeAuthEmail(gameState?.username || '') || '').trim()
+  ];
+  const raw = candidates.find((value) => !!value) || '';
+  if (!raw) return `${APP_INTRO_SEEN_KEY}:default`;
+  return `${APP_INTRO_SEEN_KEY}:${encodeURIComponent(raw.toLowerCase())}`;
+}
+
+function hasSeenAppIntro() {
+  try {
+    return localStorage.getItem(buildAppIntroStorageKey()) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+function markAppIntroAsSeen() {
+  try {
+    localStorage.setItem(buildAppIntroStorageKey(), '1');
+  } catch (e) {}
+}
+
+function syncGlobalHelpVisibility() {
+  if (!elements.globalHelpFab) return;
+  const authVisible = !!(elements.authModal && elements.authModal.classList.contains('active'));
+  const shouldShow = !!(isLoggedIn && !authVisible);
+  elements.globalHelpFab.classList.toggle('hidden', !shouldShow);
+  if (!shouldShow) {
+    if (elements.globalHelpModal) elements.globalHelpModal.classList.remove('active');
+    if (elements.appIntroModal) elements.appIntroModal.classList.remove('active');
+  }
+}
+
+function openGlobalHelpModal() {
+  if (!isLoggedIn) return;
+  if (!elements.globalHelpModal) return;
+  elements.globalHelpModal.classList.add('active');
+}
+
+function closeGlobalHelpModal() {
+  if (!elements.globalHelpModal) return;
+  elements.globalHelpModal.classList.remove('active');
+}
+
+function renderAppIntroStep() {
+  if (!elements.appIntroStepLabel || !elements.appIntroTitle || !elements.appIntroDescription || !elements.appIntroPoints) {
+    return;
+  }
+  const total = APP_INTRO_STEPS.length;
+  const safeIndex = Math.min(Math.max(0, Number(appIntroStepIndex) || 0), total - 1);
+  appIntroStepIndex = safeIndex;
+  const step = APP_INTRO_STEPS[safeIndex];
+
+  elements.appIntroStepLabel.textContent = `Passo ${safeIndex + 1} de ${total}`;
+  elements.appIntroTitle.textContent = step.title;
+  elements.appIntroDescription.textContent = step.description;
+  elements.appIntroPoints.innerHTML = '';
+  (step.points || []).forEach((line) => {
+    const item = document.createElement('li');
+    item.textContent = String(line || '');
+    elements.appIntroPoints.appendChild(item);
+  });
+
+  if (elements.appIntroPrevBtn) elements.appIntroPrevBtn.disabled = safeIndex <= 0;
+  if (elements.appIntroNextBtn) {
+    elements.appIntroNextBtn.textContent = safeIndex >= total - 1 ? 'Concluir' : 'Próximo';
+  }
+}
+
+function openAppIntro(options = {}) {
+  const force = !!options.force;
+  const reset = options.reset !== false;
+  if (!elements.appIntroModal) return;
+  if (!isLoggedIn) return;
+  if (!force && hasSeenAppIntro()) return;
+  if (reset) appIntroStepIndex = 0;
+  renderAppIntroStep();
+  elements.appIntroModal.classList.add('active');
+}
+
+function closeAppIntro(options = {}) {
+  if (!elements.appIntroModal) return;
+  const markSeen = options.markSeen !== false;
+  if (markSeen) markAppIntroAsSeen();
+  elements.appIntroModal.classList.remove('active');
+}
+
+function moveAppIntroStep(delta) {
+  const total = APP_INTRO_STEPS.length;
+  const nextIndex = Math.min(Math.max(0, appIntroStepIndex + Number(delta || 0)), total - 1);
+  if (nextIndex === appIntroStepIndex) return;
+  appIntroStepIndex = nextIndex;
+  renderAppIntroStep();
+}
+
+function advanceAppIntroStep() {
+  const total = APP_INTRO_STEPS.length;
+  if (appIntroStepIndex >= total - 1) {
+    closeAppIntro({ markSeen: true });
+    return;
+  }
+  moveAppIntroStep(1);
+}
+
+function scheduleAppIntroIfNeeded(options = {}) {
+  const force = !!options.force;
+  syncGlobalHelpVisibility();
+  if (!isLoggedIn) return;
+  if (!force) {
+    const storageKey = buildAppIntroStorageKey();
+    if (appIntroPromptedKey === storageKey) return;
+    appIntroPromptedKey = storageKey;
+    if (hasSeenAppIntro()) return;
+  }
+  setTimeout(() => {
+    if (!isLoggedIn) return;
+    if (elements.authModal && elements.authModal.classList.contains('active')) return;
+    openAppIntro({ force: true, reset: true });
+  }, 700);
 }
 
 function showAccountLoading(message = 'Construindo seu universo...') {
@@ -17460,8 +18505,16 @@ function buildCompactGameState(state) {
   if (Array.isArray(compact.gratitudeJournal) && compact.gratitudeJournal.length > 365) {
     compact.gratitudeJournal = compact.gratitudeJournal.slice(0, 365);
   }
+  if (Array.isArray(compact.playerRoomBlessOutbox)) {
+    compact.playerRoomBlessOutbox = getPlayerRoomBlessOutboxFromState({
+      playerRoomBlessOutbox: compact.playerRoomBlessOutbox
+    });
+  }
   if (Array.isArray(compact.adminNewsInbox)) {
     compact.adminNewsInbox = getAdminNewsInboxListFromState({ adminNewsInbox: compact.adminNewsInbox });
+  }
+  if (compact.adminMaintenance && typeof compact.adminMaintenance === 'object') {
+    compact.adminMaintenance = normalizeAdminMaintenanceState(compact.adminMaintenance);
   }
   if (Array.isArray(compact.bibleHighlights) && compact.bibleHighlights.length > MAX_BIBLE_HIGHLIGHTS) {
     compact.bibleHighlights = compact.bibleHighlights.slice(-MAX_BIBLE_HIGHLIGHTS);
@@ -17490,6 +18543,9 @@ function buildCompactGameState(state) {
   if (Array.isArray(compact.deletedWorkLogIds) && compact.deletedWorkLogIds.length > MAX_DELETED_WORKLOG_IDS) {
     compact.deletedWorkLogIds = compact.deletedWorkLogIds.slice(-MAX_DELETED_WORKLOG_IDS);
   }
+  if (Array.isArray(compact.adminHiddenRankUserIds) && compact.adminHiddenRankUserIds.length > MAX_ADMIN_HIDDEN_RANK_IDS) {
+    compact.adminHiddenRankUserIds = compact.adminHiddenRankUserIds.slice(-MAX_ADMIN_HIDDEN_RANK_IDS);
+  }
   if (Array.isArray(compact.achievements) && compact.achievements.length > 500) {
     compact.achievements = compact.achievements.slice(-500);
   }
@@ -17516,10 +18572,19 @@ function buildCompactGameState(state) {
       handsPlayed: Math.max(0, Number(compact.poker.handsPlayed || 0) || 0),
       wins: Math.max(0, Number(compact.poker.wins || 0) || 0),
       losses: Math.max(0, Number(compact.poker.losses || 0) || 0),
+      difficulty: normalizePokerDifficulty(compact.poker.difficulty || 'normal'),
       robotCoinsExchanged: Math.min(
         POKER_ROBOT_COIN_EXCHANGE_LIMIT,
         Math.max(0, Math.round(Number(compact.poker.robotCoinsExchanged || 0) || 0))
-      )
+      ),
+      lastCpuDelta: Number.isFinite(Number(compact.poker.lastCpuDelta))
+        ? Math.round(Number(compact.poker.lastCpuDelta))
+        : 0,
+      lastCpuOutcome: (() => {
+        const safe = String(compact.poker.lastCpuOutcome || '').trim().toLowerCase();
+        if (safe === 'win' || safe === 'loss' || safe === 'tie' || safe === 'idle') return safe;
+        return 'idle';
+      })()
     };
   }
 
@@ -19416,6 +20481,14 @@ function normalizeSupabaseSignInResult(result, fallbackEmail = '') {
   return { user, session };
 }
 
+function isSupabaseProfileDisabled(profile = {}) {
+  const safe = profile && typeof profile === 'object' ? profile : {};
+  const inv = safe.inventory && typeof safe.inventory === 'object' && !Array.isArray(safe.inventory)
+    ? safe.inventory
+    : {};
+  return inv.adminDisabled === true || inv.adminDeleted === true;
+}
+
 function mapSupabaseProfileToGameState(profile = {}, authEmail = '') {
   const source = (profile && typeof profile === 'object') ? profile : {};
   const inventoryData = (source.inventory && typeof source.inventory === 'object' && !Array.isArray(source.inventory))
@@ -19458,6 +20531,7 @@ function mapSupabaseProfileToGameState(profile = {}, authEmail = '') {
     zenMusic: inventoryData.zenMusic || null,
     gratitudeJournal: Array.isArray(inventoryData.gratitudeJournal) ? inventoryData.gratitudeJournal : [],
     bibleHighlights: normalizeBibleHighlights(inventoryData.bibleHighlights || []),
+    adminMaintenance: normalizeAdminMaintenanceState(inventoryData.adminMaintenance || {}),
     taskHistory: Array.isArray(inventoryData.taskHistory) ? inventoryData.taskHistory : [],
     tasksLastChangedAt: inventoryData.tasksLastChangedAt || null,
     expenseGroups: Array.isArray(inventoryData.expenseGroups) ? inventoryData.expenseGroups : [],
@@ -19471,6 +20545,7 @@ function mapSupabaseProfileToGameState(profile = {}, authEmail = '') {
     finances: Array.isArray(inventoryData.financesBackup) ? inventoryData.financesBackup : [],
     workLog: Array.isArray(inventoryData.workLogBackup) ? inventoryData.workLogBackup : [],
     deletedWorkLogIds: Array.isArray(inventoryData.deletedWorkLogIds) ? inventoryData.deletedWorkLogIds : [],
+    adminHiddenRankUserIds: Array.isArray(inventoryData.adminHiddenRankUserIds) ? inventoryData.adminHiddenRankUserIds : [],
     cloudProfileUpdatedAt: source.updated_at || inventoryData.cloudProfileUpdatedAt || null,
     financeCurrentMonth: inventoryData.financeCurrentMonth || null,
     financeSelectedMonth: inventoryData.financeSelectedMonth || null,
@@ -19482,7 +20557,10 @@ function mapSupabaseProfileToGameState(profile = {}, authEmail = '') {
       handsPlayed: 0,
       wins: 0,
       losses: 0,
-      robotCoinsExchanged: 0
+      robotCoinsExchanged: 0,
+      difficulty: 'normal',
+      lastCpuDelta: 0,
+      lastCpuOutcome: 'idle'
     },
     pokerOnlineBonusClaimed: !!inventoryData.pokerOnlineBonusClaimed,
     nofapStartAt: inventoryData.nofapStartAt || null,
@@ -19576,6 +20654,15 @@ async function login() {
       });
     }
 
+    if (profile && isSupabaseProfileDisabled(profile)) {
+      try {
+        if (typeof SupabaseService.signOut === 'function') {
+          await SupabaseService.signOut();
+        }
+      } catch (e) {}
+      throw new Error('Sua conta foi desativada pelo administrador.');
+    }
+
     const initialCloudState = profile
       ? mapSupabaseProfileToGameState(profile, authEmail)
       : { username: authEmail, name: 'Novo Herói' };
@@ -19602,6 +20689,7 @@ async function login() {
     checkBillsDueToday();
     elements.loginUsername.value = '';
     elements.loginPassword.value = '';
+    schedulePostLoginTasks();
     showToast('✅ Login realizado! Carregando o restante dos dados em segundo plano...');
 
     (async function loadRemainingCloudData() {
@@ -19940,6 +21028,7 @@ async function register() {
     updateUI();
     if (typeof checkAchievements === 'function') checkAchievements();
     checkBackupAvailability();
+    schedulePostLoginTasks();
     elements.registerUsername.value = '';
     elements.registerPassword.value = '';
     elements.registerConfirmPassword.value = '';
@@ -19979,11 +21068,17 @@ async function logout() {
   
   disconnectPlayerRoom({ resetStatus: true });
   disconnectArena({ resetStatus: true });
+  globalRankCloudProfiles = [];
+  globalRankCloudLastFetchAt = 0;
+  globalRankCloudFetchPromise = null;
+  globalRankCloudCacheLoaded = false;
   showToast('👋 Até logo!');
   setCurrentAuthUserId('');
   isLoggedIn = false;
   canRunFullCloudSync = false;
   gameState = null;
+  appIntroPromptedKey = '';
+  appIntroStepIndex = 0;
   stopWorkLocationMonitor();
   nofapLastSyncedDay = -1;
   clearSession();
@@ -20008,6 +21103,10 @@ async function checkSession() {
     setCurrentAuthUserId('');
     clearSession();
     canRunFullCloudSync = false;
+    globalRankCloudProfiles = [];
+    globalRankCloudLastFetchAt = 0;
+    globalRankCloudFetchPromise = null;
+    globalRankCloudCacheLoaded = false;
     showAuthModal();
     showLoginForm();
     return;
@@ -20066,6 +21165,10 @@ async function checkSession() {
       setCurrentAuthUserId('');
       canRunFullCloudSync = false;
       clearSession();
+      globalRankCloudProfiles = [];
+      globalRankCloudLastFetchAt = 0;
+      globalRankCloudFetchPromise = null;
+      globalRankCloudCacheLoaded = false;
       showAuthModal();
       showLoginForm();
       return;
@@ -20093,6 +21196,10 @@ async function checkSession() {
   }
 
   canRunFullCloudSync = false;
+  globalRankCloudProfiles = [];
+  globalRankCloudLastFetchAt = 0;
+  globalRankCloudFetchPromise = null;
+  globalRankCloudCacheLoaded = false;
   showAuthModal();
   setCurrentAuthUserId('');
   showLoginForm();
@@ -20101,6 +21208,7 @@ async function checkSession() {
 function schedulePostLoginTasks() {
   deferTask(() => {
     if (typeof updateUI === 'function') updateUI();
+    scheduleAppIntroIfNeeded();
     if (typeof renderDailyTasks === 'function') renderDailyTasks();
     if (typeof renderFinances === 'function') renderFinances();
   }, 100);
@@ -20138,6 +21246,12 @@ function schedulePostLoginTasks() {
       });
     }
   }, 1650);
+
+  deferTask(() => {
+    refreshGlobalRankProfilesFromCloud({ force: true, silent: true }).catch((e) => {
+      console.warn('Falha ao carregar ranking global da nuvem após login:', e);
+    });
+  }, 2100);
 }
 
 function createDefaultShopUnlocks() {
@@ -20718,6 +21832,13 @@ async function loadAdminUsersForPanel({ silent = false } = {}) {
   }
   if (adminPanelState.loading) return adminPanelState.rows;
 
+  if (adminPanelState.hiddenProfileIds instanceof Set) {
+    getAdminHiddenRankUserIdsFromState(gameState).forEach((id) => {
+      const safeId = String(id || '').trim();
+      if (safeId) adminPanelState.hiddenProfileIds.add(safeId);
+    });
+  }
+
   adminPanelState.loading = true;
   if (!silent) setAdminPanelStatus('Carregando usuários...');
 
@@ -20757,6 +21878,14 @@ async function loadAdminUsersForPanel({ silent = false } = {}) {
       rows = mergeAdminPanelRows(rows, realtimeRows);
       if (source === 'local') source = 'hybrid';
       if (source === 'cloud') source = 'hybrid';
+    }
+
+    if (adminPanelState.hiddenProfileIds && adminPanelState.hiddenProfileIds.size > 0) {
+      rows = rows.filter((row) => {
+        const pid = String(row?.profileId || '').trim();
+        if (!pid) return true;
+        return !adminPanelState.hiddenProfileIds.has(pid);
+      });
     }
 
     adminPanelState.rows = rows;
@@ -20799,6 +21928,18 @@ function openAdminUsersPanel() {
   }
   if (elements.adminNewsInput) elements.adminNewsInput.value = '';
   setAdminNewsComposerStatus('Aguardando envio.');
+  const maintenanceState = getAdminMaintenanceState(gameState);
+  if (elements.adminMaintenanceMessageInput) {
+    elements.adminMaintenanceMessageInput.value = maintenanceState.active
+      ? String(maintenanceState.message || '')
+      : '';
+  }
+  setAdminMaintenanceComposerStatus(
+    maintenanceState.active
+      ? `Ativa • atualizada por ${maintenanceState.updatedBy || 'Admin'}`
+      : 'Manutenção desativada.',
+    false
+  );
   if (elements.adminUsersModal) elements.adminUsersModal.classList.add('active');
   loadAdminUsersForPanel().catch((error) => {
     console.error('Erro ao abrir painel admin:', error);
@@ -20838,6 +21979,49 @@ async function sendAdminNewsFromAdminPanel() {
   if (elements.adminNewsInput) elements.adminNewsInput.value = '';
   setAdminNewsComposerStatus('Notícia enviada com sucesso.');
   showToast('📰 Notícia enviada para os jogadores.');
+}
+
+async function sendAdminMaintenanceFromAdminPanel(active = true) {
+  if (!isAdminControlUser(gameState)) {
+    showToast('⚠️ Apenas o admin pode alterar manutenção.');
+    return;
+  }
+
+  const enabled = !!active;
+  const rawMessage = sanitizeAdminMaintenanceText(elements.adminMaintenanceMessageInput?.value || '');
+  const message = enabled
+    ? (rawMessage || 'Atualização disponível. Toque em "Atualizar app".')
+    : (rawMessage || 'Manutenção desativada. App liberado.');
+
+  setAdminMaintenanceComposerStatus(enabled ? 'Ativando manutenção...' : 'Desativando manutenção...');
+  const sent = await sendPlayerRoomPayload({
+    kind: PLAYER_ROOM_ADMIN_MAINTENANCE_KIND,
+    text: message,
+    maintenanceActive: enabled,
+    maintenanceMessage: message
+  }, {
+    toastFail: enabled
+      ? '❌ Não consegui ativar manutenção agora.'
+      : '❌ Não consegui desativar manutenção agora.'
+  });
+
+  if (!sent) {
+    setAdminMaintenanceComposerStatus('Falha ao atualizar manutenção.', true);
+    return;
+  }
+
+  applyAdminMaintenanceState({
+    active: enabled,
+    message,
+    updatedAt: new Date().toISOString(),
+    updatedBy: getPlayerRoomDisplayName() || 'Admin'
+  }, { persist: true, silent: true });
+
+  setAdminMaintenanceComposerStatus(
+    enabled ? 'Modo manutenção ativado para todos.' : 'Modo manutenção desativado para todos.',
+    false
+  );
+  showToast(enabled ? '🛠️ Modo manutenção ativado.' : '✅ Modo manutenção desativado.');
 }
 
 async function saveAdminPanelUserChanges() {
@@ -21078,7 +22262,21 @@ async function deleteAdminPanelSelectedUser() {
     return;
   }
 
+  const rankRemovalIds = [
+    selected?.profileId,
+    selected?.userId,
+    selected?.localKey,
+    selected?.email,
+    selectedRaw?.profileId,
+    selectedRaw?.userId,
+    selectedRaw?.localKey,
+    selectedRaw?.email
+  ]
+    .map((raw) => String(raw || '').trim())
+    .filter(Boolean);
+
   try {
+    let rankHiddenChanged = false;
     if (isAdminCloudLikeSource(selected.source)) {
       if (
         !useSupabase() ||
@@ -21087,7 +22285,26 @@ async function deleteAdminPanelSelectedUser() {
       ) {
         throw new Error('Remoção de usuário na nuvem indisponível no momento.');
       }
-      await SupabaseService.adminDeleteUser(selected.profileId, { hardDelete: false });
+      let removedMode = 'cloud_delete';
+      try {
+        const result = await SupabaseService.adminDeleteUser(selected.profileId, { hardDelete: false });
+        removedMode = String(result?.mode || removedMode);
+      } catch (cloudDeleteError) {
+        if (typeof SupabaseService.adminSoftDeleteUser === 'function') {
+          const soft = await SupabaseService.adminSoftDeleteUser(selected.profileId, {
+            reason: 'removed_by_admin'
+          });
+          removedMode = String(soft?.mode || 'soft_disable');
+        } else {
+          throw cloudDeleteError;
+        }
+      }
+      rankHiddenChanged = rememberAdminHiddenRankUserIds(rankRemovalIds) || rankHiddenChanged;
+      if (removedMode === 'soft_disable') {
+        showToast('✅ Usuário desativado pelo admin (remoção lógica).');
+      } else {
+        showToast('✅ Usuário removido na nuvem.');
+      }
     } else {
       const users = getUsers();
       const localKey = selected.localKey || selected.email || selected.username;
@@ -21100,13 +22317,49 @@ async function deleteAdminPanelSelectedUser() {
       if (!saveResult || saveResult.ok !== true) {
         throw new Error('Não foi possível remover o usuário no dispositivo.');
       }
+      rankHiddenChanged = rememberAdminHiddenRankUserIds(rankRemovalIds) || rankHiddenChanged;
     }
 
-    showToast('✅ Usuário removido com sucesso.');
+    if (rankHiddenChanged) {
+      await saveGame(true);
+      try {
+        refreshGlobalRankProfilesFromCloud({ force: true, silent: true });
+      } catch (e) {}
+      if (typeof updateUI === 'function') updateUI();
+    }
+
+    if (!isAdminCloudLikeSource(selected.source)) {
+      showToast('✅ Usuário removido com sucesso.');
+    }
     clearAdminPanelSelection();
     await loadAdminUsersForPanel({ silent: true });
   } catch (error) {
     console.error('Erro ao remover usuário no painel admin:', error);
+    const message = String(error?.message || '').toLowerCase();
+    const maybePermissionIssue = (
+      isAdminCloudLikeSource(selected?.source) &&
+      (
+        message.includes('permiss') ||
+        message.includes('rls') ||
+        message.includes('permission') ||
+        message.includes('rpc')
+      )
+    );
+    if (
+      maybePermissionIssue &&
+      selected?.profileId &&
+      adminPanelState.hiddenProfileIds
+    ) {
+      const rankHiddenChanged = rememberAdminHiddenRankUserIds(rankRemovalIds);
+      if (rankHiddenChanged) {
+        await saveGame(true);
+        if (typeof updateUI === 'function') updateUI();
+      }
+      clearAdminPanelSelection();
+      await loadAdminUsersForPanel({ silent: true });
+      showToast('⚠️ Sem permissão para excluir na nuvem. Usuário ocultado neste painel.');
+      return;
+    }
     showToast(`❌ ${error?.message || 'Falha ao remover usuário.'}`);
   }
 }
@@ -23154,7 +24407,9 @@ function normalizeGameState(data) {
       wins: 0,
       losses: 0,
       robotCoinsExchanged: 0,
-      difficulty: 'normal'
+      difficulty: 'normal',
+      lastCpuDelta: 0,
+      lastCpuOutcome: 'idle'
     },
     streak: 0,
     skillPoints: 0,
@@ -23197,11 +24452,19 @@ function normalizeGameState(data) {
     zenPhotoVault: [],
     zenMusic: null,
     bibleHighlights: [],
+    playerRoomBlessOutbox: [],
     adminNewsInbox: [],
+    adminMaintenance: {
+      active: false,
+      message: 'Manutenção desativada.',
+      updatedAt: '',
+      updatedBy: ''
+    },
     gratitudeJournal: [],
     taskHistory: [],
     deletedTaskIds: [],
     deletedWorkLogIds: [],
+    adminHiddenRankUserIds: [],
     cloudProfileUpdatedAt: data.cloudProfileUpdatedAt || null,
     expenseGroups: [], // Novos grupos de despesas
     securityLockEnabled: false,
@@ -23263,9 +24526,13 @@ function normalizeGameState(data) {
     merged.zenMusic = null;
   }
   merged.bibleHighlights = normalizeBibleHighlights(merged.bibleHighlights);
+  merged.playerRoomBlessOutbox = getPlayerRoomBlessOutboxFromState({
+    playerRoomBlessOutbox: Array.isArray(merged.playerRoomBlessOutbox) ? merged.playerRoomBlessOutbox : []
+  });
   merged.adminNewsInbox = getAdminNewsInboxListFromState({
     adminNewsInbox: Array.isArray(merged.adminNewsInbox) ? merged.adminNewsInbox : []
   });
+  merged.adminMaintenance = normalizeAdminMaintenanceState(merged.adminMaintenance || {});
 
   if (!Array.isArray(merged.financeMonthHistory)) {
     merged.financeMonthHistory = [];
@@ -23308,11 +24575,23 @@ function normalizeGameState(data) {
       POKER_ROBOT_COIN_EXCHANGE_LIMIT,
       Math.max(0, Math.round(Number(rawPoker.robotCoinsExchanged || 0) || 0))
     ),
-    difficulty: normalizePokerDifficulty(rawPoker.difficulty || 'normal')
+    difficulty: normalizePokerDifficulty(rawPoker.difficulty || 'normal'),
+    lastCpuDelta: Number.isFinite(Number(rawPoker.lastCpuDelta))
+      ? Math.round(Number(rawPoker.lastCpuDelta))
+      : 0,
+    lastCpuOutcome: (() => {
+      const safe = String(rawPoker.lastCpuOutcome || '').trim().toLowerCase();
+      if (safe === 'win' || safe === 'loss' || safe === 'tie' || safe === 'idle') return safe;
+      return 'idle';
+    })()
   };
 
   merged.deletedTaskIds = normalizeDeletionIdQueue(merged.deletedTaskIds, MAX_DELETED_TASK_IDS);
   merged.deletedWorkLogIds = normalizeDeletionIdQueue(merged.deletedWorkLogIds, MAX_DELETED_WORKLOG_IDS);
+  merged.adminHiddenRankUserIds = normalizeAdminHiddenRankUserIds(
+    merged.adminHiddenRankUserIds,
+    MAX_ADMIN_HIDDEN_RANK_IDS
+  );
 
   if (!Array.isArray(merged.dailyTasks)) merged.dailyTasks = [];
   if (!Array.isArray(merged.workLog)) merged.workLog = [];
@@ -23463,6 +24742,159 @@ function normalizeGameState(data) {
     });
     if (out.length <= maxItems) return out;
     return out.slice(-maxItems);
+  }
+
+  function normalizeAdminHiddenRankUserIds(list = [], maxItems = MAX_ADMIN_HIDDEN_RANK_IDS) {
+    return normalizeDeletionIdQueue(list, maxItems);
+  }
+
+  function loadAdminHiddenRankUserIdsFromStorage() {
+    try {
+      const raw = localStorage.getItem(ADMIN_HIDDEN_RANK_STORAGE_KEY);
+      if (!raw) return [];
+      return normalizeAdminHiddenRankUserIds(JSON.parse(raw), MAX_ADMIN_HIDDEN_RANK_IDS);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function persistAdminHiddenRankUserIdsToStorage(ids = []) {
+    try {
+      const safe = normalizeAdminHiddenRankUserIds(ids, MAX_ADMIN_HIDDEN_RANK_IDS);
+      localStorage.setItem(ADMIN_HIDDEN_RANK_STORAGE_KEY, JSON.stringify(safe));
+    } catch (e) {}
+  }
+
+  function getAdminHiddenRankUserIdsFromState(state = gameState) {
+    const fromStorage = loadAdminHiddenRankUserIdsFromStorage();
+    if (!state || typeof state !== 'object') return fromStorage;
+    const normalized = normalizeAdminHiddenRankUserIds(
+      [
+        ...(Array.isArray(state.adminHiddenRankUserIds) ? state.adminHiddenRankUserIds : []),
+        ...fromStorage
+      ],
+      MAX_ADMIN_HIDDEN_RANK_IDS
+    );
+    state.adminHiddenRankUserIds = normalized;
+    persistAdminHiddenRankUserIdsToStorage(normalized);
+    return normalized;
+  }
+
+  function getAdminHiddenRankUserIdSet() {
+    const hidden = new Set(getAdminHiddenRankUserIdsFromState(gameState));
+    if (adminPanelState?.hiddenProfileIds instanceof Set && adminPanelState.hiddenProfileIds.size > 0) {
+      adminPanelState.hiddenProfileIds.forEach((rawId) => {
+        const id = String(rawId || '').trim();
+        if (id) hidden.add(id);
+      });
+    }
+    return hidden;
+  }
+
+  function isHiddenFromGlobalRank(userId = '', hiddenSet = null) {
+    const safeUserId = String(userId || '').trim();
+    if (!safeUserId) return false;
+    const hidden = hiddenSet instanceof Set ? hiddenSet : getAdminHiddenRankUserIdSet();
+    if (!hidden || hidden.size === 0) return false;
+    return hidden.has(safeUserId);
+  }
+
+  function pruneMatchProfilesByHiddenUsers(match = null, hiddenSet = null) {
+    if (!match || typeof match !== 'object') return false;
+    const hidden = hiddenSet instanceof Set ? hiddenSet : getAdminHiddenRankUserIdSet();
+    if (!hidden || hidden.size === 0) return false;
+
+    let changed = false;
+    if (match.profiles && typeof match.profiles === 'object') {
+      Object.keys(match.profiles).forEach((key) => {
+        const entry = match.profiles[key];
+        const userId = String(entry?.userId || key || '').trim();
+        if (!userId || !hidden.has(userId)) return;
+        delete match.profiles[key];
+        changed = true;
+      });
+    }
+
+    if (Array.isArray(match.players)) {
+      const filteredPlayers = match.players.filter((entry) => {
+        const userId = String(
+          (entry && typeof entry === 'object')
+            ? (entry.userId || entry.profileId || entry.id || '')
+            : entry || ''
+        ).trim();
+        return !(userId && hidden.has(userId));
+      });
+      if (filteredPlayers.length !== match.players.length) {
+        match.players = filteredPlayers;
+        changed = true;
+      }
+    }
+
+    if (Array.isArray(match.fighters)) {
+      const filteredFighters = match.fighters.filter((entry) => {
+        const userId = String(entry?.userId || entry?.profileId || entry?.id || '').trim();
+        return !(userId && hidden.has(userId));
+      });
+      if (filteredFighters.length !== match.fighters.length) {
+        match.fighters = filteredFighters;
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  function pruneGlobalRankCachesByHiddenUsers(hiddenSet = null) {
+    const hidden = hiddenSet instanceof Set ? hiddenSet : getAdminHiddenRankUserIdSet();
+    if (!hidden || hidden.size === 0) return false;
+
+    let changed = false;
+    const filterByUserId = (list = [], readUserId) => {
+      if (!Array.isArray(list) || list.length === 0) return list;
+      const filtered = list.filter((entry) => {
+        const userId = String(readUserId(entry) || '').trim();
+        return !(userId && hidden.has(userId));
+      });
+      if (filtered.length !== list.length) changed = true;
+      return filtered;
+    };
+
+    arenaPlayers = filterByUserId(arenaPlayers, (entry) => entry?.userId || entry?.profileId || entry?.id || '');
+    playerRoomPresenceProfiles = filterByUserId(
+      playerRoomPresenceProfiles,
+      (entry) => entry?.userId || entry?.profileId || entry?.id || ''
+    );
+    globalRankCloudProfiles = filterByUserId(
+      globalRankCloudProfiles,
+      (entry) => entry?.userId || entry?.profileId || entry?.id || ''
+    );
+
+    if (pruneMatchProfilesByHiddenUsers(arenaCurrentMatch, hidden)) changed = true;
+    if (pruneMatchProfilesByHiddenUsers(pokerOnlineMatch, hidden)) changed = true;
+
+    return changed;
+  }
+
+  function rememberAdminHiddenRankUserIds(ids = []) {
+    if (!gameState || typeof gameState !== 'object') return false;
+
+    const extraIds = (Array.isArray(ids) ? ids : [ids])
+      .map((raw) => String(raw || '').trim())
+      .filter(Boolean);
+    if (!extraIds.length) return false;
+
+    const current = getAdminHiddenRankUserIdsFromState(gameState);
+    const merged = normalizeAdminHiddenRankUserIds([...current, ...extraIds], MAX_ADMIN_HIDDEN_RANK_IDS);
+    const changed = merged.length !== current.length || merged.some((id, index) => id !== current[index]);
+
+    gameState.adminHiddenRankUserIds = merged;
+    persistAdminHiddenRankUserIdsToStorage(merged);
+    if (adminPanelState?.hiddenProfileIds instanceof Set) {
+      merged.forEach((id) => adminPanelState.hiddenProfileIds.add(id));
+    }
+
+    pruneGlobalRankCachesByHiddenUsers(new Set(merged));
+    return changed;
   }
 
   function isCloudUuidLike(id) {
@@ -23828,8 +25260,13 @@ function stateHasMeaningfulProgress(state = {}) {
       ...(Array.isArray(safeCloud.deletedWorkLogIds) ? safeCloud.deletedWorkLogIds : []),
       ...(Array.isArray(safeLocal.deletedWorkLogIds) ? safeLocal.deletedWorkLogIds : [])
     ], MAX_DELETED_WORKLOG_IDS);
+    const mergedAdminHiddenRankUserIds = normalizeAdminHiddenRankUserIds([
+      ...(Array.isArray(safeCloud.adminHiddenRankUserIds) ? safeCloud.adminHiddenRankUserIds : []),
+      ...(Array.isArray(safeLocal.adminHiddenRankUserIds) ? safeLocal.adminHiddenRankUserIds : [])
+    ], MAX_ADMIN_HIDDEN_RANK_IDS);
     safeCloud.deletedTaskIds = mergedDeletedTaskIds;
     safeCloud.deletedWorkLogIds = mergedDeletedWorkLogIds;
+    safeCloud.adminHiddenRankUserIds = mergedAdminHiddenRankUserIds;
 
     const cloudTaskCountBeforeDeletionFilter = Array.isArray(safeCloud.dailyTasks) ? safeCloud.dailyTasks.length : 0;
     const cloudWorkCountBeforeDeletionFilter = Array.isArray(safeCloud.workLog) ? safeCloud.workLog.length : 0;
@@ -31310,7 +32747,9 @@ function updateUI() {
 
   ensureEconomyState(gameState);
   ensureCinemaRoomState(gameState);
+  renderAdminMaintenanceBanner();
   updateAdminPanelVisibility();
+  syncGlobalHelpVisibility();
 
   const financeStateChanged = ensureFinanceMonthlyState();
   if (financeStateChanged && isLoggedIn) {
@@ -31538,6 +32977,33 @@ if (elements.saveProfileBtn) elements.saveProfileBtn.addEventListener('click', s
 if (elements.setProfilePhotoBtn) elements.setProfilePhotoBtn.addEventListener('click', openProfilePhotoPicker);
 if (elements.clearProfilePhotoBtn) elements.clearProfilePhotoBtn.addEventListener('click', clearProfilePhoto);
 if (elements.profilePhotoInput) elements.profilePhotoInput.addEventListener('change', handleProfilePhotoChange);
+if (elements.globalHelpFab) elements.globalHelpFab.addEventListener('click', openGlobalHelpModal);
+if (elements.globalHelpCloseBtn) elements.globalHelpCloseBtn.addEventListener('click', closeGlobalHelpModal);
+if (elements.globalHelpModal) {
+  elements.globalHelpModal.addEventListener('click', (event) => {
+    if (event.target === elements.globalHelpModal) closeGlobalHelpModal();
+  });
+}
+if (elements.globalHelpReplayIntroBtn) {
+  elements.globalHelpReplayIntroBtn.addEventListener('click', () => {
+    closeGlobalHelpModal();
+    openAppIntro({ force: true, reset: true });
+  });
+}
+if (elements.appIntroSkipBtn) {
+  elements.appIntroSkipBtn.addEventListener('click', () => closeAppIntro({ markSeen: true }));
+}
+if (elements.appIntroPrevBtn) {
+  elements.appIntroPrevBtn.addEventListener('click', () => moveAppIntroStep(-1));
+}
+if (elements.appIntroNextBtn) {
+  elements.appIntroNextBtn.addEventListener('click', advanceAppIntroStep);
+}
+if (elements.appIntroModal) {
+  elements.appIntroModal.addEventListener('click', (event) => {
+    if (event.target === elements.appIntroModal) closeAppIntro({ markSeen: true });
+  });
+}
 if (elements.cinemaApiSearchBtn) elements.cinemaApiSearchBtn.addEventListener('click', () => {
   searchCinemaApiCatalog().catch((err) => {
     console.warn('Erro ao buscar filmes na API:', err);
@@ -31909,6 +33375,77 @@ function getConfiguredAppShareUrl() {
   return '';
 }
 
+function getConfiguredAppUpdateUrl() {
+  const isPublicHttpUrl = (value) => {
+    const safe = String(value || '').trim();
+    if (!/^https?:\/\//i.test(safe)) return false;
+    try {
+      const parsed = new URL(safe);
+      const host = String(parsed.hostname || '').trim().toLowerCase();
+      if (!host) return false;
+      if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return false;
+      if (host.endsWith('.local')) return false;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const fromConfig = String(window?.OracleConfig?.appUpdateUrl || '').trim();
+  if (isPublicHttpUrl(fromConfig)) return fromConfig;
+  try {
+    const fromStorage = String(localStorage.getItem(APP_UPDATE_URL_STORAGE_KEY) || '').trim();
+    if (isPublicHttpUrl(fromStorage)) return fromStorage;
+  } catch (e) {}
+  const fallbackShareUrl = getConfiguredAppShareUrl();
+  if (isPublicHttpUrl(fallbackShareUrl)) return fallbackShareUrl;
+  return '';
+}
+
+function promptAndSaveAppUpdateUrl() {
+  const current = getConfiguredAppUpdateUrl() || getConfiguredAppShareUrl();
+  const input = prompt(
+    'Cole o link público para atualização do app (página de download ou APK):',
+    current || 'https://'
+  );
+  const safe = String(input || '').trim();
+  if (!safe) return '';
+  let parsed = null;
+  try { parsed = new URL(safe); } catch (e) {}
+  const host = String(parsed?.hostname || '').trim().toLowerCase();
+  if (!/^https?:\/\//i.test(safe) || !host || host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local')) {
+    showToast('⚠️ Use um link público real (https://...) para atualização.');
+    return '';
+  }
+  try {
+    localStorage.setItem(APP_UPDATE_URL_STORAGE_KEY, safe);
+  } catch (e) {}
+  return safe;
+}
+
+async function openAppUpdateUrl(url = '') {
+  const safeUrl = String(url || '').trim();
+  if (!safeUrl) return false;
+  try {
+    if (isNativeCapacitorPlatform()) {
+      const Browser = window?.Capacitor?.Plugins?.Browser;
+      if (Browser && typeof Browser.open === 'function') {
+        await Browser.open({ url: safeUrl });
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('Falha ao abrir atualização com Browser nativo:', e);
+  }
+  try {
+    window.open(safeUrl, '_blank', 'noopener,noreferrer');
+    return true;
+  } catch (e) {
+    console.warn('Falha ao abrir link de atualização no navegador:', e);
+    return false;
+  }
+}
+
 function promptAndSaveAppShareUrl() {
   const current = getConfiguredAppShareUrl();
   const input = prompt(
@@ -31976,6 +33513,22 @@ async function checkForUpdates() {
     if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
     if (mobileBtn) { mobileBtn.disabled = true; }
     
+    if (isNativeCapacitorPlatform()) {
+      let updateUrl = getConfiguredAppUpdateUrl();
+      if (!updateUrl) updateUrl = promptAndSaveAppUpdateUrl();
+      if (!updateUrl) {
+        showToast('⚠️ Configure um link público de atualização do app.');
+        return;
+      }
+      const opened = await openAppUpdateUrl(updateUrl);
+      if (opened) {
+        showToast('📲 Página de atualização aberta. Baixe e instale a nova versão.');
+      } else {
+        showToast('❌ Não consegui abrir o link de atualização.');
+      }
+      return;
+    }
+
     showToast('🔍 Forçando atualização completa...');
     
     // 1. Limpa TODOS os caches
@@ -47086,6 +48639,32 @@ elements.adminNewsSendBtn?.addEventListener('click', () => {
     showToast(`❌ ${error?.message || 'Falha ao enviar notícia.'}`);
   });
 });
+elements.adminMaintenanceEnableBtn?.addEventListener('click', () => {
+  sendAdminMaintenanceFromAdminPanel(true).catch((error) => {
+    console.error('Erro ao ativar manutenção do admin:', error);
+    setAdminMaintenanceComposerStatus(String(error?.message || 'Falha ao ativar manutenção.'), true);
+    showToast(`❌ ${error?.message || 'Falha ao ativar manutenção.'}`);
+  });
+});
+elements.adminMaintenanceDisableBtn?.addEventListener('click', () => {
+  sendAdminMaintenanceFromAdminPanel(false).catch((error) => {
+    console.error('Erro ao desativar manutenção do admin:', error);
+    setAdminMaintenanceComposerStatus(String(error?.message || 'Falha ao desativar manutenção.'), true);
+    showToast(`❌ ${error?.message || 'Falha ao desativar manutenção.'}`);
+  });
+});
+elements.adminMaintenanceMessageInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    sendAdminMaintenanceFromAdminPanel(true).catch((error) => {
+      console.error('Erro ao ativar manutenção do admin (atalho):', error);
+      setAdminMaintenanceComposerStatus(String(error?.message || 'Falha ao ativar manutenção.'), true);
+    });
+  }
+});
+elements.appMaintenanceUpdateBtn?.addEventListener('click', () => {
+  checkForUpdates();
+});
 elements.adminNewsInput?.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
@@ -47513,6 +49092,7 @@ window.addEventListener('DOMContentLoaded', () => {
         deferTask(() => {
           if (typeof renderAttributesChart === 'function') renderAttributesChart();
           if (typeof renderXpChart === 'function') renderXpChart();
+          refreshGlobalRankProfilesFromCloud({ force: false, silent: true }).catch(() => {});
         }, 120);
       }
     });
@@ -47552,6 +49132,7 @@ document.addEventListener('visibilitychange', () => {
     checkWorkLocationProximity({ manual: false, allowPermissionPrompt: true }).catch(() => {});
     if (isLoggedIn && gameState && useSupabase()) {
       refreshCloudProfileIfChanged({ force: true, silentUi: true }).catch(() => {});
+      refreshGlobalRankProfilesFromCloud({ force: true, silent: true }).catch(() => {});
     }
   }
 });
@@ -47570,6 +49151,13 @@ setInterval(() => {
   }
 }, 30000);
 
+// Pull periódico do ranking global (inclui perfis novos mesmo fora da sala).
+setInterval(() => {
+  if (isLoggedIn && gameState && useSupabase()) {
+    refreshGlobalRankProfilesFromCloud({ force: false, silent: true }).catch(() => {});
+  }
+}, GLOBAL_RANK_CLOUD_REFRESH_MS);
+
 // Timer do Relacionamento (1 segundo)
 setInterval(updateRelationshipTimer, 1000);
 
@@ -47582,6 +49170,13 @@ let updateAvailable = false;
 
 // Força atualização do app (chamado pela notificação automática)
 function forceAppUpdate() {
+  if (isNativeCapacitorPlatform()) {
+    checkForUpdates().catch((e) => {
+      console.warn('Falha ao abrir atualização no app nativo:', e);
+      showToast('❌ Não consegui abrir a atualização agora.');
+    });
+    return;
+  }
   if (swRegistration && swRegistration.waiting) {
     // Envia mensagem para o SW waiting para ativar
     swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
