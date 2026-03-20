@@ -2254,10 +2254,28 @@
         </div>
 
         <div style="margin-top:12px; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:10px;">
-          <div class="small" style="margin-bottom:6px; opacity:.88;">📰 Notícia do Admin (expira em 1 dia)</div>
-          <textarea id="adminNewsInput" rows="3" maxlength="260" placeholder="Digite o aviso/notícia que vai aparecer para os jogadores..."></textarea>
+          <div class="small" style="margin-bottom:6px; opacity:.88;">🗞️ Jornal do Reino (apenas admin • expira em 1 dia)</div>
+          <input type="text" id="adminNewsTitleInput" maxlength="80" placeholder="Título da notícia (opcional)">
+          <textarea id="adminNewsInput" rows="3" maxlength="260" placeholder="Digite o texto principal da notícia..."></textarea>
+          <div class="form-row" style="margin-top:8px;">
+            <div style="flex:1; min-width:220px;">
+              <label>Foto (URL)</label>
+              <input type="url" id="adminNewsImageUrlInput" maxlength="2048" placeholder="https://.../foto.jpg">
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label>Vídeo (URL direta ou YouTube)</label>
+              <input type="url" id="adminNewsVideoUrlInput" maxlength="2048" placeholder="https://.../video.mp4 ou https://youtu.be/...">
+              <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
+                <button type="button" class="ghost" id="adminNewsVideoPickBtn">🎬 Enviar vídeo</button>
+                <button type="button" class="ghost" id="adminNewsVideoClearBtn">🧹 Limpar vídeo</button>
+              </div>
+              <input type="file" id="adminNewsVideoFileInput" accept="video/*" style="display:none;">
+              <div class="small" id="adminNewsVideoLabel" style="opacity:.72; margin-top:4px;">Nenhum vídeo selecionado.</div>
+            </div>
+          </div>
           <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
             <button class="btn" id="adminNewsSendBtn">Enviar notícia</button>
+            <button class="ghost" id="adminNewsCancelEditBtn" style="display:none;">Cancelar edição</button>
             <span class="small" id="adminNewsStatus" style="opacity:.8;">Aguardando envio.</span>
           </div>
         </div>
@@ -2316,10 +2334,10 @@
     </div>
 
     <div class="modal" id="adminNewsInboxModal">
-      <div class="modal-content" style="max-width:640px;">
-        <h2>📰 Caixa de Notícias</h2>
-        <div class="small" style="margin-bottom:10px; opacity:.82;">Mensagens do admin ficam salvas por até 24 horas.</div>
-        <div id="adminNewsInboxList" style="max-height:340px; overflow:auto; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:8px;">
+      <div class="modal-content admin-news-inbox-modal-content" style="max-width:720px;">
+        <h2>🗞️ Jornal do Reino</h2>
+        <div class="small" style="margin-bottom:10px; opacity:.82;">Somente o admin publica. Itens ficam visíveis por até 24 horas.</div>
+        <div id="adminNewsInboxList" class="admin-news-list" style="max-height:68vh; overflow:auto; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:8px;">
           <div class="small" style="opacity:.75;">Sem notícias no momento.</div>
         </div>
         <div style="display:flex; gap:8px; margin-top:14px;">
@@ -2354,7 +2372,10 @@
       <div class="modal-content help-guide-modal-content">
         <div class="help-guide-header">
           <h2>❓ Como funciona o app</h2>
-          <button class="ghost" id="globalHelpCloseBtn" type="button">Fechar</button>
+          <div class="help-guide-header-actions">
+            <button class="ghost" id="globalHelpReplayIntroTopBtn" type="button">Ver intro</button>
+            <button class="ghost" id="globalHelpCloseBtn" type="button">Fechar</button>
+          </div>
         </div>
         <p class="small help-guide-subtitle">
           Guia rápido para novos usuários. Toque em qualquer seção para entender melhor o fluxo.

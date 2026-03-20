@@ -1899,6 +1899,25 @@ body.zen-mode-active .site-footer {
 body.zen-mode-active .container {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Guia/intro aberto: esconder barras para leitura limpa no telefone */
+body.help-guide-open #mobile-nav,
+body.help-guide-open .control-bar,
+body.help-guide-open .app-nav,
+body.help-guide-open .mobile-header,
+body.help-guide-open .cinema,
+body.help-guide-open .mobile-bottom-nav,
+body.help-guide-open .mobile-drawer-overlay,
+body.help-guide-open .fab-container,
+body.help-guide-open .help-fab,
+body.help-guide-open #appMaintenanceBanner,
+body.help-guide-open .site-footer {
+  display: none !important;
+}
+
+body.help-guide-open .container {
+  padding-bottom: env(safe-area-inset-bottom);
+}
 .site-footer .footer-msg {
   font-size: 13px;
   opacity: 0.95;
@@ -1993,6 +2012,44 @@ body.zen-mode-active .container {
 #financeCategoryModal input[type="text"] {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Ajuste final mobile para garantir que o botão "Ver intro novamente" apareça */
+@media (max-width: 900px) {
+  #globalHelpModal {
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding:
+      max(10px, env(safe-area-inset-top))
+      10px
+      calc(10px + env(safe-area-inset-bottom)) !important;
+    overflow-y: auto !important;
+  }
+
+  #globalHelpModal .modal-content {
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+    border-radius: 14px !important;
+    justify-content: flex-start !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom)) !important;
+  }
+
+  #globalHelpModal .help-guide-actions {
+    position: static !important;
+    margin-top: 14px !important;
+    padding-top: 0 !important;
+    justify-content: flex-end !important;
+  }
+
+  #globalHelpReplayIntroBtn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 /* Modal Editor de RelÃ³gio */
@@ -10929,30 +10986,87 @@ body.bible-reading-page .bible-reading-content .bible-note-inline-highlight {
   align-items: stretch;
   justify-content: center;
   z-index: 2;
+  perspective: 1400px;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 20px 40px rgba(8, 17, 33, 0.45));
+}
+
+.bible-reading-gate-aura {
+  position: absolute;
+  inset: -10% -8%;
+  pointer-events: none;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(255, 240, 190, 0.35), rgba(255, 240, 190, 0) 58%),
+    radial-gradient(circle at 50% 28%, rgba(255, 226, 138, 0.26), rgba(255, 226, 138, 0) 66%);
+  opacity: 0.92;
+  animation: bibleGateAuraPulse 3.8s ease-in-out infinite;
+}
+
+.bible-reading-gate-arch {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  border: 3px solid rgba(255, 220, 136, 0.9);
+  box-shadow:
+    0 0 0 2px rgba(124, 76, 20, 0.5) inset,
+    inset 0 0 24px rgba(255, 238, 184, 0.28),
+    0 0 36px rgba(255, 208, 101, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 229, 153, 0.16), rgba(80, 42, 12, 0.12));
+  pointer-events: none;
+  z-index: 4;
+}
+
+.bible-reading-gate.is-opening .bible-reading-gate-arch {
+  animation: bibleGateArchIgnite 1.25s ease forwards;
+}
+
+.bible-reading-gate-arch::before,
+.bible-reading-gate-arch::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(68%, 520px);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 231, 167, 0.78);
+  background: linear-gradient(180deg, rgba(176, 107, 36, 0.95), rgba(95, 53, 19, 0.92));
+  box-shadow:
+    0 5px 14px rgba(7, 13, 25, 0.3),
+    inset 0 0 8px rgba(255, 228, 161, 0.3);
+}
+
+.bible-reading-gate-arch::before {
+  top: 3%;
+  height: 10px;
+}
+
+.bible-reading-gate-arch::after {
+  bottom: 3%;
+  height: 9px;
 }
 
 .bible-reading-gate-door {
   position: relative;
   width: 50%;
   height: 100%;
+  display: block;
   overflow: hidden;
-  border: 2px solid rgba(255, 224, 142, 0.8);
+  border: 2px solid rgba(255, 224, 142, 0.84);
   background:
-    linear-gradient(180deg, rgba(255, 225, 145, 0.86), rgba(210, 145, 44, 0.9)),
-    repeating-linear-gradient(
-      90deg,
-      rgba(108, 66, 13, 0.42) 0 7px,
-      rgba(255, 228, 142, 0.15) 7px 16px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      rgba(104, 62, 10, 0.34) 0 7px,
-      rgba(255, 229, 149, 0.12) 7px 16px
-    );
+    linear-gradient(180deg, rgba(255, 230, 154, 0.98), rgba(229, 163, 60, 0.95) 52%, rgba(154, 92, 30, 0.96)),
+    linear-gradient(90deg, rgba(112, 63, 17, 0.2), rgba(255, 232, 170, 0.08) 32%, rgba(112, 63, 17, 0.24));
   box-shadow:
-    inset 0 0 30px rgba(255, 242, 190, 0.34),
-    0 0 24px rgba(255, 214, 124, 0.36);
-  transition: transform 1.25s cubic-bezier(0.32, 0.9, 0.16, 1);
+    inset 0 0 38px rgba(255, 242, 193, 0.34),
+    inset 0 -12px 20px rgba(103, 59, 17, 0.26),
+    0 0 28px rgba(255, 214, 124, 0.34);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition:
+    transform 1.55s cubic-bezier(0.22, 0.82, 0.15, 1),
+    opacity 1.1s ease;
+  z-index: 3;
 }
 
 .bible-reading-gate-door::before {
@@ -10961,17 +11075,58 @@ body.bible-reading-page .bible-reading-content .bible-note-inline-highlight {
   inset: 0;
   pointer-events: none;
   background:
+    linear-gradient(180deg, rgba(255, 246, 210, 0.32), rgba(255, 246, 210, 0) 22%),
+    linear-gradient(90deg, rgba(255, 240, 187, 0.22), rgba(255, 240, 187, 0) 26%, rgba(0, 0, 0, 0) 72%, rgba(255, 240, 187, 0.2));
+  opacity: 0.9;
+}
+
+.bible-reading-gate-door::after {
+  content: '';
+  position: absolute;
+  inset: 8% 5%;
+  border-radius: 12px;
+  border: 1px solid rgba(114, 67, 18, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 230, 162, 0.35),
+    inset 0 0 24px rgba(104, 58, 18, 0.3);
+  pointer-events: none;
+}
+
+.bible-reading-gate-door-grid {
+  position: absolute;
+  inset: 12% 10%;
+  border-radius: 10px;
+  border: 2px solid rgba(112, 64, 14, 0.52);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 235, 173, 0.45),
+    inset 0 0 28px rgba(102, 55, 15, 0.3);
+  background:
     repeating-linear-gradient(
       90deg,
-      rgba(255, 245, 197, 0.28) 0 2px,
-      rgba(0, 0, 0, 0) 2px 22px
+      rgba(100, 57, 14, 0.6) 0 4px,
+      rgba(255, 235, 178, 0.08) 4px 42px
     ),
     repeating-linear-gradient(
       0deg,
-      rgba(255, 245, 197, 0.2) 0 2px,
-      rgba(0, 0, 0, 0) 2px 22px
+      rgba(100, 57, 14, 0.55) 0 4px,
+      rgba(255, 235, 178, 0.08) 4px 42px
     );
-  opacity: 0.82;
+  opacity: 0.92;
+}
+
+.bible-reading-gate-door-knot {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(111, 62, 15, 0.7);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 241, 196, 0.95), rgba(215, 142, 46, 0.9) 60%, rgba(128, 75, 24, 0.96) 100%);
+  box-shadow:
+    inset 0 0 4px rgba(255, 241, 196, 0.65),
+    0 0 8px rgba(255, 212, 105, 0.45);
 }
 
 .bible-reading-gate-door.left {
@@ -10984,21 +11139,130 @@ body.bible-reading-page .bible-reading-content .bible-note-inline-highlight {
   transform-origin: right center;
 }
 
+.bible-reading-gate-door.left .bible-reading-gate-door-knot {
+  right: 8%;
+}
+
+.bible-reading-gate-door.right .bible-reading-gate-door-knot {
+  left: 8%;
+}
+
 .bible-reading-gate.is-open .bible-reading-gate-door.left {
-  transform: translateX(-108%);
+  transform: translateX(-126%) rotateY(-34deg) scale(0.97);
+  opacity: 0.96;
 }
 
 .bible-reading-gate.is-open .bible-reading-gate-door.right {
-  transform: translateX(108%);
+  transform: translateX(126%) rotateY(34deg) scale(0.97);
+  opacity: 0.96;
+}
+
+.bible-reading-gate-light {
+  position: absolute;
+  top: 7%;
+  bottom: 9%;
+  left: 50%;
+  width: min(17%, 132px);
+  transform: translateX(-50%) scaleX(0.18);
+  transform-origin: center center;
+  border-radius: 999px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 244, 208, 0.92), rgba(255, 238, 188, 0.42) 48%, rgba(255, 238, 188, 0) 74%);
+  opacity: 0;
+  z-index: 1;
+  transition:
+    transform 1.45s cubic-bezier(0.21, 0.92, 0.18, 1),
+    opacity 1.15s ease;
+}
+
+.bible-reading-gate-floor-light {
+  position: absolute;
+  left: 50%;
+  bottom: -8%;
+  width: min(76%, 680px);
+  height: min(22%, 128px);
+  transform: translateX(-50%) scaleY(0.52);
+  transform-origin: center top;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 236, 181, 0.8), rgba(255, 236, 181, 0.34) 48%, rgba(255, 236, 181, 0) 75%);
+  opacity: 0;
+  z-index: 1;
+  transition:
+    opacity 1.05s ease,
+    transform 1.35s cubic-bezier(0.21, 0.92, 0.18, 1);
 }
 
 .bible-reading-gate-shine {
   position: absolute;
-  inset: 8% 4%;
+  inset: 6% 3%;
   pointer-events: none;
-  border-radius: 12px;
-  background: radial-gradient(circle, rgba(255, 244, 199, 0.42), rgba(255, 244, 199, 0));
-  opacity: 0.62;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(255, 247, 216, 0.52), rgba(255, 247, 216, 0) 66%),
+    linear-gradient(180deg, rgba(255, 243, 199, 0.14), rgba(255, 243, 199, 0));
+  opacity: 0.58;
+  mix-blend-mode: screen;
+  transition: opacity 1.05s ease;
+  z-index: 2;
+}
+
+.bible-reading-gate.is-open .bible-reading-gate-light {
+  transform: translateX(-50%) scaleX(1);
+  opacity: 0.98;
+  animation: bibleGateLightFlow 2.2s ease-in-out infinite;
+}
+
+.bible-reading-gate.is-open .bible-reading-gate-floor-light {
+  opacity: 0.96;
+  transform: translateX(-50%) scaleY(1);
+}
+
+.bible-reading-gate.is-open .bible-reading-gate-shine {
+  opacity: 0.92;
+}
+
+@keyframes bibleGateAuraPulse {
+  0%, 100% {
+    opacity: 0.76;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes bibleGateArchIgnite {
+  0% {
+    box-shadow:
+      0 0 0 2px rgba(124, 76, 20, 0.5) inset,
+      inset 0 0 24px rgba(255, 238, 184, 0.28),
+      0 0 36px rgba(255, 208, 101, 0.34);
+  }
+  60% {
+    box-shadow:
+      0 0 0 2px rgba(124, 76, 20, 0.55) inset,
+      inset 0 0 26px rgba(255, 244, 202, 0.5),
+      0 0 54px rgba(255, 223, 140, 0.62);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(124, 76, 20, 0.5) inset,
+      inset 0 0 24px rgba(255, 238, 184, 0.28),
+      0 0 36px rgba(255, 208, 101, 0.34);
+  }
+}
+
+@keyframes bibleGateLightFlow {
+  0%, 100% {
+    filter: blur(0.4px) brightness(0.95);
+  }
+  50% {
+    filter: blur(1.2px) brightness(1.16);
+  }
 }
 
 .bible-reading-intro-label {
@@ -11801,6 +12065,217 @@ body.oracle-chat-open .mobile-bottom-nav {
 
 body.oracle-chat-open.logged-in {
   padding-bottom: 0 !important;
+}
+
+/* ===============================
+   Jornal do Reino (Admin News)
+   =============================== */
+.admin-news-inbox-modal-content {
+  background:
+    radial-gradient(circle at 20% 12%, rgba(255, 240, 194, 0.22), transparent 34%),
+    radial-gradient(circle at 82% 8%, rgba(255, 226, 142, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(44, 32, 17, 0.96), rgba(26, 20, 11, 0.97));
+  border: 1px solid rgba(235, 197, 123, 0.34);
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.46),
+    inset 0 0 0 1px rgba(255, 233, 171, 0.18);
+}
+
+.admin-news-list {
+  display: grid;
+  gap: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 241, 206, 0.1), rgba(0, 0, 0, 0.04));
+}
+
+.admin-news-paper-item {
+  border: 1px solid rgba(235, 199, 130, 0.32);
+  border-radius: 12px;
+  padding: 12px;
+  background:
+    radial-gradient(circle at 16% 8%, rgba(255, 237, 193, 0.92), rgba(244, 214, 158, 0.9) 40%, rgba(215, 173, 109, 0.86) 100%);
+  color: #3f2610;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px rgba(131, 83, 32, 0.2),
+    inset 0 0 22px rgba(255, 243, 213, 0.22);
+}
+
+.admin-news-paper-item.is-unread {
+  border-color: rgba(255, 215, 120, 0.64);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(255, 226, 152, 0.36) inset,
+    inset 0 0 22px rgba(255, 243, 213, 0.22);
+}
+
+.admin-news-paper-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.admin-news-paper-edition {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #714417;
+  font-weight: 800;
+}
+
+.admin-news-paper-info {
+  font-size: 0.74rem;
+  color: rgba(82, 49, 20, 0.88);
+}
+
+.admin-news-paper-title {
+  margin: 2px 0 8px;
+  font-size: 1.06rem;
+  line-height: 1.25;
+  color: #3a210c;
+  text-shadow: 0 1px 0 rgba(255, 248, 230, 0.44);
+}
+
+.admin-news-paper-body {
+  margin: 0;
+  line-height: 1.55;
+  color: #4a2b11;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-news-content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 220px);
+  gap: 10px;
+  align-items: start;
+}
+
+.admin-news-media-wrap {
+  margin-top: 10px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(98, 58, 20, 0.32);
+  background: rgba(36, 23, 10, 0.25);
+  width: 100%;
+}
+
+.admin-news-media-wrap-inline {
+  margin-top: 0;
+  max-width: 220px;
+  justify-self: end;
+}
+
+.admin-news-media-image {
+  display: block;
+  width: 100%;
+  max-height: min(42vh, 260px);
+  object-fit: cover;
+  background: #120d08;
+}
+
+.admin-news-media-video {
+  display: block;
+  width: 100%;
+  min-height: 150px;
+  max-height: min(42vh, 260px);
+  border: 0;
+  background: #120d08;
+}
+
+.admin-news-media-wrap-inline .admin-news-media-image {
+  max-height: 130px;
+}
+
+.admin-news-media-wrap-inline .admin-news-media-video {
+  min-height: 120px;
+  max-height: 136px;
+}
+
+.admin-news-paper-foot {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-news-paper-expiry {
+  font-size: 0.72rem;
+  color: rgba(91, 56, 25, 0.82);
+}
+
+.admin-news-reactions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-news-reaction-btn {
+  border: 1px solid rgba(97, 56, 17, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 248, 229, 0.55);
+  color: #4b2b12;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+
+.admin-news-reaction-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(113, 66, 21, 0.52);
+  background: rgba(255, 248, 229, 0.8);
+}
+
+.admin-news-reaction-btn.active {
+  border-color: rgba(175, 102, 28, 0.82);
+  background: linear-gradient(135deg, rgba(255, 229, 157, 0.92), rgba(241, 185, 94, 0.86));
+  color: #2f1808;
+}
+
+.admin-news-admin-btn {
+  background: rgba(255, 244, 219, 0.72);
+}
+
+.admin-news-admin-btn.danger {
+  border-color: rgba(144, 44, 30, 0.46);
+  background: rgba(255, 226, 218, 0.8);
+  color: #5a1f12;
+}
+
+@media (max-width: 700px) {
+  .admin-news-paper-item {
+    padding: 10px;
+  }
+
+  .admin-news-paper-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .admin-news-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-news-media-wrap-inline {
+    max-width: none;
+  }
+
+  .admin-news-media-wrap-inline .admin-news-media-video {
+    min-height: 160px;
+    max-height: min(45vh, 240px);
+  }
+
+  .admin-news-media-video {
+    min-height: 160px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -14470,6 +14945,12 @@ body.logged-in #tab-bible .bible-interface.bible-interface-simple {
   gap: 12px;
 }
 
+.help-guide-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .help-guide-header h2 {
   margin: 0;
 }
@@ -14585,5 +15066,48 @@ body.logged-in #tab-bible .bible-interface.bible-interface-simple {
 
   .help-guide-grid {
     grid-template-columns: 1fr;
+  }
+
+  .help-guide-header {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .help-guide-header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  /* Evita corte do guia/intro no telefone */
+  #globalHelpModal,
+  #appIntroModal {
+    align-items: flex-start;
+    justify-content: center;
+    padding:
+      max(10px, env(safe-area-inset-top))
+      10px
+      calc(10px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+
+  #globalHelpModal .modal-content,
+  #appIntroModal .modal-content {
+    width: min(96vw, 680px);
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: 0;
+    border-radius: 14px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    margin: 0;
+  }
+
+  #globalHelpModal .help-guide-actions,
+  #appIntroModal .app-intro-actions {
+    position: sticky;
+    bottom: 0;
+    background: linear-gradient(180deg, rgba(8, 20, 37, 0), rgba(8, 20, 37, 0.94) 45%);
+    padding-top: 10px;
   }
 }

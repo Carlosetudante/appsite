@@ -2005,6 +2005,9 @@ const adminPanelState = {
   rows: [],
   hiddenProfileIds: new Set()
 };
+let adminNewsComposerVideoDataUrl = '';
+let adminNewsComposerVideoName = '';
+let adminNewsEditingId = '';
 const MAX_FINANCE_MONTH_HISTORY = 120;
 const MAX_FINANCE_ARCHIVED_KEYS = 8000;
 const MAX_DELETED_TASK_IDS = 2000;
@@ -2795,14 +2798,22 @@ const PLAYER_ROOM_MEDIA_KINDS = Object.freeze(new Set([
 const PLAYER_ROOM_SPECIAL_KINDS = Object.freeze(new Set([
   'poker_invite',
   'admin_news',
+  'admin_news_delete',
   'admin_maintenance'
 ]));
 const PLAYER_ROOM_ADMIN_NEWS_KIND = 'admin_news';
+const PLAYER_ROOM_ADMIN_NEWS_DELETE_KIND = 'admin_news_delete';
 const PLAYER_ROOM_ADMIN_MAINTENANCE_KIND = 'admin_maintenance';
 const PLAYER_ROOM_ADMIN_NEWS_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAYER_ROOM_ADMIN_NEWS_MAX_ITEMS = 120;
+const PLAYER_ROOM_ADMIN_NEWS_TITLE_MAX_LEN = 80;
+const PLAYER_ROOM_ADMIN_NEWS_MEDIA_URL_MAX_LEN = 2048;
 const PLAYER_ROOM_MAX_MEDIA_BYTES = 850 * 1024;
 const PLAYER_ROOM_MAX_VIDEO_BYTES = 2 * 1024 * 1024;
+const PLAYER_ROOM_ADMIN_NEWS_IMAGE_FILE_MAX_BYTES = PLAYER_ROOM_MAX_MEDIA_BYTES;
+const PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES = PLAYER_ROOM_MAX_VIDEO_BYTES;
+const PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_IMAGE_MAX_LEN = Math.floor((PLAYER_ROOM_ADMIN_NEWS_IMAGE_FILE_MAX_BYTES * 4) / 3) + 4096;
+const PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_VIDEO_MAX_LEN = Math.floor((PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES * 4) / 3) + 4096;
 const PLAYER_ROOM_MAX_AUDIO_MS = 25000;
 const PLAYER_ROOM_MAX_GIF_BYTES = 1200 * 1024;
 const PLAYER_ROOM_MAX_ACTIVE_MEDIA = 18;
@@ -2895,6 +2906,7 @@ let pokerMode = 'offline';
 let pokerOnlineIncomingChallenge = null;
 let pokerOnlineMatch = null;
 let pokerResolvedOnlineSessions = new Set();
+let pokerCpuResetCountdownTimer = null;
 let nofapEditorialFxBound = false;
 const POKER_MODE_VALUES = Object.freeze(['offline', 'online']);
 const POKER_ONLINE_MAX_PLAYERS = 7;
@@ -3547,6 +3559,7 @@ const elements = {
   globalHelpFab: document.getElementById('globalHelpFab'),
   globalHelpModal: document.getElementById('globalHelpModal'),
   globalHelpCloseBtn: document.getElementById('globalHelpCloseBtn'),
+  globalHelpReplayIntroTopBtn: document.getElementById('globalHelpReplayIntroTopBtn'),
   globalHelpReplayIntroBtn: document.getElementById('globalHelpReplayIntroBtn'),
   appIntroModal: document.getElementById('appIntroModal'),
   appIntroStepLabel: document.getElementById('appIntroStepLabel'),
@@ -3659,8 +3672,16 @@ const elements = {
   adminUserDeleteBtn: document.getElementById('adminUserDeleteBtn'),
   adminUserClearSelectionBtn: document.getElementById('adminUserClearSelectionBtn'),
   adminUsersCloseBtn: document.getElementById('adminUsersCloseBtn'),
+  adminNewsTitleInput: document.getElementById('adminNewsTitleInput'),
   adminNewsInput: document.getElementById('adminNewsInput'),
+  adminNewsImageUrlInput: document.getElementById('adminNewsImageUrlInput'),
+  adminNewsVideoUrlInput: document.getElementById('adminNewsVideoUrlInput'),
+  adminNewsVideoPickBtn: document.getElementById('adminNewsVideoPickBtn'),
+  adminNewsVideoClearBtn: document.getElementById('adminNewsVideoClearBtn'),
+  adminNewsVideoFileInput: document.getElementById('adminNewsVideoFileInput'),
+  adminNewsVideoLabel: document.getElementById('adminNewsVideoLabel'),
   adminNewsSendBtn: document.getElementById('adminNewsSendBtn'),
+  adminNewsCancelEditBtn: document.getElementById('adminNewsCancelEditBtn'),
   adminNewsStatus: document.getElementById('adminNewsStatus'),
   adminMaintenanceMessageInput: document.getElementById('adminMaintenanceMessageInput'),
   adminMaintenanceEnableBtn: document.getElementById('adminMaintenanceEnableBtn'),
@@ -4076,6 +4097,89 @@ function sanitizeAdminNewsText(value, maxLen = 260) {
     .slice(0, Math.max(10, Number(maxLen) || 260));
 }
 
+function sanitizeAdminNewsTitle(value, maxLen = PLAYER_ROOM_ADMIN_NEWS_TITLE_MAX_LEN) {
+  return String(value ?? '')
+    .replace(/\r/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, Math.max(0, Number(maxLen) || PLAYER_ROOM_ADMIN_NEWS_TITLE_MAX_LEN));
+}
+
+function normalizeAdminNewsMediaKind(value = '') {
+  const safe = String(value || '').trim().toLowerCase();
+  if (safe === 'image' || safe === 'video' || safe === 'youtube') return safe;
+  return '';
+}
+
+function normalizeAdminNewsReaction(value = '') {
+  const safe = String(value || '').trim().toLowerCase();
+  if (safe === 'like' || safe === 'dislike') return safe;
+  return '';
+}
+
+function normalizeYouTubeEmbedUrl(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (e) {
+    return '';
+  }
+  const host = String(url.hostname || '').toLowerCase();
+  let videoId = '';
+  if (host.includes('youtube.com')) {
+    videoId = String(url.searchParams.get('v') || '').trim();
+    if (!videoId) {
+      const parts = String(url.pathname || '').split('/').filter(Boolean);
+      if (parts[0] === 'shorts' && parts[1]) videoId = parts[1];
+      if (parts[0] === 'embed' && parts[1]) videoId = parts[1];
+    }
+  } else if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
+    const parts = String(url.pathname || '').split('/').filter(Boolean);
+    if (parts[0]) videoId = parts[0];
+  }
+  videoId = videoId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+  if (!videoId) return '';
+  return `https://www.youtube.com/embed/${videoId}`;
+}
+
+function sanitizeAdminNewsMediaValue(value = '', kind = '') {
+  const mediaKind = normalizeAdminNewsMediaKind(kind);
+  const raw = String(value || '').trim();
+  if (!raw || !mediaKind) return '';
+
+  if (mediaKind === 'youtube') {
+    return normalizeYouTubeEmbedUrl(raw);
+  }
+
+  const lower = raw.toLowerCase();
+  const isDataUrl = lower.startsWith('data:');
+
+  if (isDataUrl) {
+    const allowedData = mediaKind === 'image'
+      ? lower.startsWith('data:image/')
+      : lower.startsWith('data:video/');
+    if (!allowedData) return '';
+    const maxDataLen = mediaKind === 'image'
+      ? PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_IMAGE_MAX_LEN
+      : PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_VIDEO_MAX_LEN;
+    if (raw.length > maxDataLen) return '';
+    return raw;
+  }
+
+  const safeRaw = raw.slice(0, PLAYER_ROOM_ADMIN_NEWS_MEDIA_URL_MAX_LEN);
+  let parsed;
+  try {
+    parsed = new URL(safeRaw);
+  } catch (e) {
+    return '';
+  }
+  const proto = String(parsed.protocol || '').toLowerCase();
+  if (proto !== 'https:' && proto !== 'http:') return '';
+  return parsed.toString().slice(0, PLAYER_ROOM_ADMIN_NEWS_MEDIA_URL_MAX_LEN);
+}
+
 function sanitizeAdminMaintenanceText(value, maxLen = 240) {
   return String(value ?? '')
     .replace(/\r/g, ' ')
@@ -4218,7 +4322,44 @@ function isPlayerRoomAdminNewsExpiredMessage(message = {}, nowMs = Date.now()) {
 function normalizeAdminNewsInboxEntry(entry = {}) {
   const source = entry && typeof entry === 'object' ? entry : {};
   const text = sanitizeAdminNewsText(source.text || source.message || '');
-  if (!text) return null;
+  const title = sanitizeAdminNewsTitle(source.title || source.adminNewsTitle || '');
+
+  let mediaKind = normalizeAdminNewsMediaKind(source.mediaKind || source.adminNewsMediaKind || '');
+  let mediaUrl = sanitizeAdminNewsMediaValue(
+    source.mediaUrl || source.adminNewsMediaUrl || source.mediaData || source.adminNewsMediaData || '',
+    mediaKind
+  );
+
+  if (!mediaUrl) {
+    const imageCandidate = sanitizeAdminNewsMediaValue(
+      source.imageUrl || source.adminNewsImageUrl || '',
+      'image'
+    );
+    const rawVideo = String(source.videoUrl || source.adminNewsVideoUrl || '').trim();
+    const youtubeCandidate = sanitizeAdminNewsMediaValue(rawVideo, 'youtube');
+    const videoCandidate = youtubeCandidate
+      ? ''
+      : sanitizeAdminNewsMediaValue(rawVideo, 'video');
+    if (youtubeCandidate) {
+      mediaKind = 'youtube';
+      mediaUrl = youtubeCandidate;
+    } else if (videoCandidate) {
+      mediaKind = 'video';
+      mediaUrl = videoCandidate;
+    } else if (imageCandidate) {
+      mediaKind = 'image';
+      mediaUrl = imageCandidate;
+    } else {
+      mediaKind = '';
+    }
+  }
+
+  const mediaPoster = sanitizeAdminNewsMediaValue(
+    source.mediaPoster || source.adminNewsMediaPoster || '',
+    'image'
+  );
+
+  if (!text && !title && !mediaUrl) return null;
 
   const createdAt = normalizeAdminNewsIso(source.createdAt || source.sentAt, new Date().toISOString());
   const createdMs = Date.parse(createdAt);
@@ -4236,12 +4377,17 @@ function normalizeAdminNewsInboxEntry(entry = {}) {
 
   return {
     id: id || `news-${Date.now()}`,
+    title,
     text,
+    mediaKind,
+    mediaUrl,
+    mediaPoster,
     senderId: String(source.senderId || source.userId || '').trim().slice(0, 120),
     senderName: String(source.senderName || source.username || 'Admin').trim().slice(0, 60) || 'Admin',
     createdAt,
     expiresAt,
-    readAt: normalizeAdminNewsIso(source.readAt, '')
+    readAt: normalizeAdminNewsIso(source.readAt, ''),
+    reaction: normalizeAdminNewsReaction(source.reaction)
   };
 }
 
@@ -4318,11 +4464,74 @@ function formatAdminNewsTimestamp(value) {
   });
 }
 
+function buildAdminNewsMediaElement(entry = {}) {
+  const kind = normalizeAdminNewsMediaKind(entry.mediaKind || '');
+  const mediaUrl = String(entry.mediaUrl || '').trim();
+  if (!kind || !mediaUrl) return null;
+
+  if (kind === 'image') {
+    const img = document.createElement('img');
+    img.className = 'admin-news-media-image';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.alt = sanitizeAdminNewsTitle(entry.title || 'Imagem da notícia') || 'Imagem da notícia';
+    img.src = mediaUrl;
+    return img;
+  }
+
+  if (kind === 'youtube') {
+    const iframe = document.createElement('iframe');
+    iframe.className = 'admin-news-media-video';
+    iframe.loading = 'lazy';
+    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+    iframe.allowFullscreen = true;
+    iframe.src = mediaUrl;
+    iframe.title = sanitizeAdminNewsTitle(entry.title || 'Vídeo da notícia') || 'Vídeo da notícia';
+    return iframe;
+  }
+
+  if (kind === 'video') {
+    const video = document.createElement('video');
+    video.className = 'admin-news-media-video';
+    video.controls = true;
+    video.preload = 'metadata';
+    video.playsInline = true;
+    video.src = mediaUrl;
+    const poster = String(entry.mediaPoster || '').trim();
+    if (poster) video.poster = poster;
+    return video;
+  }
+
+  return null;
+}
+
+function toggleAdminNewsReaction(entryId = '', reaction = '') {
+  if (!gameState || typeof gameState !== 'object') return;
+  const safeId = String(entryId || '').trim();
+  if (!safeId) return;
+  const safeReaction = normalizeAdminNewsReaction(reaction);
+  if (!safeReaction) return;
+
+  const list = getAdminNewsInboxListFromState(gameState);
+  const idx = list.findIndex((item) => String(item?.id || '').trim() === safeId);
+  if (idx < 0) return;
+
+  const current = normalizeAdminNewsReaction(list[idx]?.reaction || '');
+  const next = current === safeReaction ? '' : safeReaction;
+  list[idx] = {
+    ...list[idx],
+    reaction: next
+  };
+  setAdminNewsInboxList(list, { persist: true, silent: true });
+}
+
 function renderAdminNewsInboxList() {
   const listEl = elements.adminNewsInboxList;
   if (!listEl) return;
 
   const items = purgeExpiredAdminNewsInbox({ persist: false, silent: true });
+  listEl.classList.add('admin-news-list');
   if (!items.length) {
     listEl.innerHTML = '<div class="small" style="opacity:.75;">Sem notícias no momento.</div>';
     return;
@@ -4330,34 +4539,115 @@ function renderAdminNewsInboxList() {
 
   listEl.innerHTML = '';
   items.forEach((entry) => {
-    const item = document.createElement('div');
-    item.style.border = '1px solid rgba(255,255,255,0.12)';
-    item.style.borderRadius = '10px';
-    item.style.padding = '10px';
-    item.style.marginBottom = '8px';
-    item.style.background = String(entry.readAt || '').trim()
-      ? 'rgba(255,255,255,0.02)'
-      : 'rgba(255,214,10,0.08)';
+    const item = document.createElement('article');
+    item.className = 'admin-news-paper-item';
+    if (!String(entry.readAt || '').trim()) item.classList.add('is-unread');
 
     const head = document.createElement('div');
-    head.className = 'small';
-    head.style.opacity = '0.85';
-    head.style.marginBottom = '6px';
-    head.textContent = `${entry.senderName || 'Admin'} • ${formatAdminNewsTimestamp(entry.createdAt)}`;
+    head.className = 'admin-news-paper-head';
+    const edition = document.createElement('div');
+    edition.className = 'admin-news-paper-edition';
+    edition.textContent = 'Jornal do Reino';
+    const info = document.createElement('div');
+    info.className = 'admin-news-paper-info';
+    info.textContent = `${entry.senderName || 'Admin'} • ${formatAdminNewsTimestamp(entry.createdAt)}`;
+    head.appendChild(edition);
+    head.appendChild(info);
 
-    const body = document.createElement('div');
-    body.textContent = entry.text || '';
-    body.style.lineHeight = '1.4';
+    const title = sanitizeAdminNewsTitle(entry.title || '');
+    if (title) {
+      const titleEl = document.createElement('h3');
+      titleEl.className = 'admin-news-paper-title';
+      titleEl.textContent = title;
+      item.appendChild(head);
+      item.appendChild(titleEl);
+    } else {
+      item.appendChild(head);
+    }
+
+    const bodyText = sanitizeAdminNewsText(entry.text || '', 260);
+    const mediaEl = buildAdminNewsMediaElement(entry);
+
+    if (bodyText && mediaEl) {
+      const contentGrid = document.createElement('div');
+      contentGrid.className = 'admin-news-content-grid';
+
+      const body = document.createElement('p');
+      body.className = 'admin-news-paper-body';
+      body.textContent = bodyText;
+
+      const mediaWrap = document.createElement('div');
+      mediaWrap.className = 'admin-news-media-wrap admin-news-media-wrap-inline';
+      mediaWrap.appendChild(mediaEl);
+
+      contentGrid.appendChild(body);
+      contentGrid.appendChild(mediaWrap);
+      item.appendChild(contentGrid);
+    } else {
+      if (bodyText) {
+        const body = document.createElement('p');
+        body.className = 'admin-news-paper-body';
+        body.textContent = bodyText;
+        item.appendChild(body);
+      }
+      if (mediaEl) {
+        const mediaWrap = document.createElement('div');
+        mediaWrap.className = 'admin-news-media-wrap';
+        mediaWrap.appendChild(mediaEl);
+        item.appendChild(mediaWrap);
+      }
+    }
 
     const foot = document.createElement('div');
-    foot.className = 'small';
-    foot.style.marginTop = '6px';
-    foot.style.opacity = '0.72';
-    foot.textContent = `Expira em: ${formatAdminNewsTimestamp(entry.expiresAt)}`;
+    foot.className = 'admin-news-paper-foot';
 
-    item.appendChild(head);
-    item.appendChild(body);
+    const expiry = document.createElement('div');
+    expiry.className = 'admin-news-paper-expiry';
+    expiry.textContent = `Expira em: ${formatAdminNewsTimestamp(entry.expiresAt)}`;
+
+    const reactions = document.createElement('div');
+    reactions.className = 'admin-news-reactions';
+
+    const currentReaction = normalizeAdminNewsReaction(entry.reaction || '');
+    const likeBtn = document.createElement('button');
+    likeBtn.type = 'button';
+    likeBtn.className = `admin-news-reaction-btn ${currentReaction === 'like' ? 'active' : ''}`.trim();
+    likeBtn.textContent = '👍 Gostei';
+    likeBtn.addEventListener('click', () => toggleAdminNewsReaction(entry.id, 'like'));
+
+    const dislikeBtn = document.createElement('button');
+    dislikeBtn.type = 'button';
+    dislikeBtn.className = `admin-news-reaction-btn ${currentReaction === 'dislike' ? 'active' : ''}`.trim();
+    dislikeBtn.textContent = '👎 Não gostei';
+    dislikeBtn.addEventListener('click', () => toggleAdminNewsReaction(entry.id, 'dislike'));
+
+    reactions.appendChild(likeBtn);
+    reactions.appendChild(dislikeBtn);
+    if (isAdminControlUser(gameState)) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'admin-news-reaction-btn admin-news-admin-btn';
+      editBtn.textContent = '✏️ Editar';
+      editBtn.addEventListener('click', () => startAdminNewsEditFromInbox(entry.id));
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'admin-news-reaction-btn admin-news-admin-btn danger';
+      deleteBtn.textContent = '🗑️ Excluir';
+      deleteBtn.addEventListener('click', () => {
+        deleteAdminNewsFromInbox(entry.id).catch((error) => {
+          console.error('Falha ao excluir notícia do inbox:', error);
+          showToast(`❌ ${error?.message || 'Falha ao excluir notícia.'}`);
+        });
+      });
+
+      reactions.appendChild(editBtn);
+      reactions.appendChild(deleteBtn);
+    }
+    foot.appendChild(expiry);
+    foot.appendChild(reactions);
     item.appendChild(foot);
+
     listEl.appendChild(item);
   });
 }
@@ -4428,10 +4718,222 @@ function setAdminNewsComposerStatus(message, isError = false) {
   elements.adminNewsStatus.style.color = isError ? '#fecaca' : '';
 }
 
+function setAdminNewsComposerEditState(newsId = '') {
+  const safeId = String(newsId || '').trim();
+  adminNewsEditingId = safeId;
+  if (elements.adminNewsSendBtn) {
+    elements.adminNewsSendBtn.textContent = safeId ? 'Salvar edição' : 'Enviar notícia';
+  }
+  if (elements.adminNewsCancelEditBtn) {
+    elements.adminNewsCancelEditBtn.style.display = safeId ? '' : 'none';
+    elements.adminNewsCancelEditBtn.disabled = !safeId;
+  }
+}
+
+function resetAdminNewsComposerInputs({ keepStatus = false } = {}) {
+  if (elements.adminNewsTitleInput) elements.adminNewsTitleInput.value = '';
+  if (elements.adminNewsInput) elements.adminNewsInput.value = '';
+  if (elements.adminNewsImageUrlInput) elements.adminNewsImageUrlInput.value = '';
+  clearAdminNewsComposerVideoSelection({ clearUrlInput: true });
+  setAdminNewsComposerEditState('');
+  if (!keepStatus) setAdminNewsComposerStatus('Aguardando envio.');
+}
+
+function updateAdminNewsVideoComposerLabel() {
+  if (!elements.adminNewsVideoLabel) return;
+  const hasFileVideo = !!String(adminNewsComposerVideoDataUrl || '').trim();
+  const fileName = String(adminNewsComposerVideoName || '').trim();
+  const hasVideoUrl = !!String(elements.adminNewsVideoUrlInput?.value || '').trim();
+
+  let text = 'Nenhum vídeo selecionado.';
+  if (hasFileVideo) {
+    text = fileName
+      ? `Vídeo selecionado: ${fileName}`
+      : 'Vídeo selecionado do dispositivo.';
+  } else if (hasVideoUrl) {
+    text = 'Vídeo por link selecionado.';
+  }
+  elements.adminNewsVideoLabel.textContent = text;
+}
+
+function clearAdminNewsComposerVideoSelection({ clearUrlInput = false } = {}) {
+  adminNewsComposerVideoDataUrl = '';
+  adminNewsComposerVideoName = '';
+  if (elements.adminNewsVideoFileInput) elements.adminNewsVideoFileInput.value = '';
+  if (clearUrlInput && elements.adminNewsVideoUrlInput) elements.adminNewsVideoUrlInput.value = '';
+  updateAdminNewsVideoComposerLabel();
+}
+
+function handleAdminNewsVideoUrlInputChanged() {
+  const hasTypedUrl = !!String(elements.adminNewsVideoUrlInput?.value || '').trim();
+  const hasFileVideo = !!String(adminNewsComposerVideoDataUrl || '').trim();
+  if (hasTypedUrl && hasFileVideo) {
+    clearAdminNewsComposerVideoSelection({ clearUrlInput: false });
+  }
+  updateAdminNewsVideoComposerLabel();
+}
+
+async function handleAdminNewsVideoFileSelection(file) {
+  if (!file) {
+    updateAdminNewsVideoComposerLabel();
+    return false;
+  }
+
+  const fileName = String(file.name || 'video').trim().slice(0, 120) || 'video';
+  const mime = String(file.type || '').toLowerCase();
+  const isVideo = mime.startsWith('video/')
+    || /\.(mp4|webm|mov|m4v|3gp|3gpp|mkv)$/i.test(fileName);
+  if (!isVideo) {
+    showToast('⚠️ Escolha um arquivo de vídeo válido.');
+    return false;
+  }
+
+  const sizeBytes = Math.max(0, Number(file.size) || 0);
+  if (sizeBytes > PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES) {
+    showToast(`⚠️ Vídeo muito grande (${playerRoomFormatBytes(sizeBytes)}). Limite: ${playerRoomFormatBytes(PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES)}.`);
+    return false;
+  }
+
+  setAdminNewsComposerStatus('Processando vídeo...');
+  try {
+    const rawDataUrl = await readFileAsDataUrl(file);
+    const safeDataUrl = sanitizeAdminNewsMediaValue(rawDataUrl, 'video');
+    if (!safeDataUrl) {
+      setAdminNewsComposerStatus('Não consegui usar esse vídeo.', true);
+      showToast('⚠️ Não consegui usar esse arquivo de vídeo.');
+      return false;
+    }
+
+    adminNewsComposerVideoDataUrl = safeDataUrl;
+    adminNewsComposerVideoName = fileName;
+    if (elements.adminNewsVideoUrlInput) elements.adminNewsVideoUrlInput.value = '';
+    updateAdminNewsVideoComposerLabel();
+    setAdminNewsComposerStatus('Vídeo anexado. Agora toque em Enviar notícia.');
+    showToast('✅ Vídeo anexado para a notícia.');
+    return true;
+  } catch (error) {
+    console.warn('Falha ao carregar vídeo da notícia do admin:', error);
+    setAdminNewsComposerStatus('Falha ao carregar o vídeo.', true);
+    showToast('❌ Não consegui carregar esse vídeo.');
+    return false;
+  }
+}
+
+function fillAdminNewsComposerFromEntry(entry = {}) {
+  const safeEntry = entry && typeof entry === 'object' ? entry : {};
+  resetAdminNewsComposerInputs({ keepStatus: true });
+
+  if (elements.adminNewsTitleInput) elements.adminNewsTitleInput.value = sanitizeAdminNewsTitle(safeEntry.title || '');
+  if (elements.adminNewsInput) elements.adminNewsInput.value = sanitizeAdminNewsText(safeEntry.text || '', 260);
+  if (elements.adminNewsImageUrlInput) elements.adminNewsImageUrlInput.value = '';
+  if (elements.adminNewsVideoUrlInput) elements.adminNewsVideoUrlInput.value = '';
+
+  const mediaKind = normalizeAdminNewsMediaKind(safeEntry.mediaKind || '');
+  const mediaUrl = sanitizeAdminNewsMediaValue(safeEntry.mediaUrl || '', mediaKind);
+  if (mediaKind === 'image' && mediaUrl && elements.adminNewsImageUrlInput) {
+    elements.adminNewsImageUrlInput.value = mediaUrl;
+  } else if ((mediaKind === 'video' || mediaKind === 'youtube') && mediaUrl) {
+    if (mediaKind === 'video' && String(mediaUrl).toLowerCase().startsWith('data:video/')) {
+      adminNewsComposerVideoDataUrl = mediaUrl;
+      adminNewsComposerVideoName = 'video-salvo';
+    } else if (elements.adminNewsVideoUrlInput) {
+      elements.adminNewsVideoUrlInput.value = mediaUrl;
+    }
+  }
+
+  setAdminNewsComposerEditState(String(safeEntry.id || '').trim());
+  updateAdminNewsVideoComposerLabel();
+}
+
+function removeAdminNewsEntryLocally(entryId = '', { persist = true, silent = false } = {}) {
+  const safeId = String(entryId || '').trim();
+  if (!safeId) return { removed: false, list: getAdminNewsInboxListFromState(gameState) };
+  const current = getAdminNewsInboxListFromState(gameState);
+  const next = current.filter((entry) => String(entry?.id || '').trim() !== safeId);
+  if (next.length === current.length) {
+    return { removed: false, list: current };
+  }
+  setAdminNewsInboxList(next, { persist, silent });
+  return { removed: true, list: next, previous: current };
+}
+
+function startAdminNewsEditFromInbox(entryId = '') {
+  if (!isAdminControlUser(gameState)) {
+    showToast('⚠️ Apenas o admin pode editar notícias.');
+    return;
+  }
+  const safeId = String(entryId || '').trim();
+  if (!safeId) return;
+  const list = getAdminNewsInboxListFromState(gameState);
+  const entry = list.find((item) => String(item?.id || '').trim() === safeId);
+  if (!entry) {
+    showToast('⚠️ Notícia não encontrada.');
+    return;
+  }
+
+  openAdminUsersPanel();
+  fillAdminNewsComposerFromEntry(entry);
+  setAdminNewsComposerStatus('Editando notícia selecionada.');
+  closeAdminNewsInboxModal();
+  showToast('📝 Editando notícia.');
+}
+
+async function deleteAdminNewsFromInbox(entryId = '') {
+  if (!isAdminControlUser(gameState)) {
+    showToast('⚠️ Apenas o admin pode excluir notícias.');
+    return;
+  }
+
+  const safeId = String(entryId || '').trim();
+  if (!safeId) return;
+
+  const list = getAdminNewsInboxListFromState(gameState);
+  const target = list.find((entry) => String(entry?.id || '').trim() === safeId);
+  if (!target) {
+    showToast('⚠️ Notícia não encontrada.');
+    return;
+  }
+
+  const title = sanitizeAdminNewsTitle(target.title || '');
+  const confirmText = title
+    ? `Excluir a notícia "${title}"?`
+    : 'Excluir esta notícia?';
+  if (typeof confirm === 'function' && !confirm(confirmText)) return;
+
+  const removed = removeAdminNewsEntryLocally(safeId, { persist: true, silent: true });
+  if (adminNewsEditingId && adminNewsEditingId === safeId) {
+    resetAdminNewsComposerInputs({ keepStatus: false });
+  }
+  if (!removed.removed) {
+    showToast('⚠️ Notícia não encontrada para exclusão.');
+    return;
+  }
+
+  const sent = await sendPlayerRoomPayload({
+    kind: PLAYER_ROOM_ADMIN_NEWS_DELETE_KIND,
+    adminNewsTargetId: safeId
+  }, {
+    toastFail: '❌ Não consegui excluir a notícia para todos.'
+  });
+
+  if (!sent) {
+    if (removed.previous) setAdminNewsInboxList(removed.previous, { persist: true, silent: true });
+    setAdminNewsComposerStatus('Falha ao excluir notícia para todos.', true);
+    return;
+  }
+
+  setAdminNewsComposerStatus('Notícia excluída.');
+  showToast('🗑️ Notícia excluída.');
+}
+
 function upsertAdminNewsInboxEntryFromMessage(message = {}, { persist = true } = {}) {
   const entry = normalizeAdminNewsInboxEntry({
     id: message.id,
+    title: message.adminNewsTitle || message.title || '',
     text: message.text,
+    mediaKind: message.adminNewsMediaKind || '',
+    mediaUrl: message.adminNewsMediaUrl || message.adminNewsMediaData || '',
+    mediaPoster: message.adminNewsMediaPoster || '',
     senderId: message.userId,
     senderName: message.username,
     createdAt: message.createdAt,
@@ -8042,6 +8544,105 @@ function canStartOfflinePokerHand(ps = ensurePokerState()) {
   return chips >= POKER_MIN_BUYIN_CHIPS;
 }
 
+function getPokerNextDayResetIso(baseMs = Date.now()) {
+  const safeBase = Number.isFinite(Number(baseMs)) ? Number(baseMs) : Date.now();
+  const date = new Date(safeBase);
+  date.setHours(24, 0, 0, 0);
+  return date.toISOString();
+}
+
+function getPokerCpuResetRemainingMs(ps = ensurePokerState()) {
+  const raw = String(ps?.cpuResetAt || '').trim();
+  if (!raw) return 0;
+  const targetMs = Date.parse(raw);
+  if (!Number.isFinite(targetMs)) return 0;
+  return Math.max(0, targetMs - Date.now());
+}
+
+function formatPokerResetCountdown(ms = 0) {
+  const totalSeconds = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function syncPokerCpuDailyResetState(ps = ensurePokerState()) {
+  if (!ps) return false;
+  let changed = false;
+  const nowMs = Date.now();
+  ps.cpuChips = normalizePokerChipValue(ps.cpuChips, POKER_CPU_START_CHIPS);
+
+  const rawReset = String(ps.cpuResetAt || '').trim();
+  const resetAtMs = rawReset ? Date.parse(rawReset) : NaN;
+  if (rawReset && !Number.isFinite(resetAtMs)) {
+    ps.cpuResetAt = '';
+    changed = true;
+  }
+
+  const validResetMs = Number.isFinite(resetAtMs) ? resetAtMs : NaN;
+  if (Number.isFinite(validResetMs) && nowMs >= validResetMs) {
+    ps.cpuResetAt = '';
+    ps.cpuChips = POKER_CPU_START_CHIPS;
+    ps.lastCpuDelta = 0;
+    ps.lastCpuOutcome = 'idle';
+    if (!ps.active) {
+      ps.actionText = '🤖 CPU recarregada com 1.000 fichas. Nova rodada liberada.';
+    }
+    return true;
+  }
+
+  if (ps.cpuChips <= 0) {
+    ps.cpuChips = 0;
+    if (!String(ps.cpuResetAt || '').trim()) {
+      ps.cpuResetAt = getPokerNextDayResetIso(nowMs);
+      if (!ps.active) {
+        ps.actionText = '⏳ CPU zerou as fichas. Recarrega automaticamente no próximo dia.';
+      }
+      changed = true;
+    }
+  } else if (String(ps.cpuResetAt || '').trim()) {
+    ps.cpuResetAt = '';
+    changed = true;
+  }
+
+  return changed;
+}
+
+function clearPokerCpuResetCountdownTimer() {
+  if (pokerCpuResetCountdownTimer) {
+    clearInterval(pokerCpuResetCountdownTimer);
+    pokerCpuResetCountdownTimer = null;
+  }
+}
+
+function syncPokerCpuResetCountdownTimer(shouldRun = false) {
+  if (!shouldRun) {
+    clearPokerCpuResetCountdownTimer();
+    return;
+  }
+  if (pokerCpuResetCountdownTimer) return;
+  pokerCpuResetCountdownTimer = setInterval(() => {
+    const ps = ensurePokerState();
+    if (!ps) {
+      clearPokerCpuResetCountdownTimer();
+      return;
+    }
+    const changed = syncPokerCpuDailyResetState(ps);
+    if (changed) {
+      persistPokerState();
+      saveGame(true);
+    }
+    const stillLocked = normalizePokerMode(pokerMode) === 'offline'
+      && normalizePokerChipValue(ps.cpuChips, 0) <= 0
+      && getPokerCpuResetRemainingMs(ps) > 0;
+    if (!stillLocked) {
+      clearPokerCpuResetCountdownTimer();
+    }
+    renderPoker();
+  }, 1000);
+}
+
 function renderPokerTableCoinsLayer({ active = false, pot = 0, playerBet = 0, opponentBet = 0 } = {}) {
   const layer = elements.pokerTableCoinsLayer;
   if (!layer) return;
@@ -8203,9 +8804,7 @@ function buyPokerChipPack(packKey = '') {
   const ps = ensurePokerState();
   if (!ps) return false;
   ps.playerChips = normalizePokerChipValue(ps.playerChips, POKER_PLAYER_START_CHIPS) + Number(pack.chips || 0);
-  if (normalizePokerChipValue(ps.cpuChips, 0) <= 0) {
-    ps.cpuChips = POKER_CPU_START_CHIPS;
-  }
+  syncPokerCpuDailyResetState(ps);
   persistPokerState();
   saveGame(true);
   updateUI();
@@ -9540,6 +10139,12 @@ function ensurePokerState() {
       lastCpuDelta: Number.isFinite(Number(saved.lastCpuDelta))
         ? Math.round(Number(saved.lastCpuDelta))
         : 0,
+      cpuResetAt: (() => {
+        const raw = String(saved.cpuResetAt || '').trim();
+        if (!raw) return '';
+        const ts = Date.parse(raw);
+        return Number.isFinite(ts) ? new Date(ts).toISOString() : '';
+      })(),
       lastCpuOutcome: (() => {
         const safe = String(saved.lastCpuOutcome || '').trim().toLowerCase();
         if (safe === 'win' || safe === 'loss' || safe === 'tie' || safe === 'idle') return safe;
@@ -9585,6 +10190,7 @@ function persistPokerState() {
     robotCoinsExchanged: normalizePokerRobotCoinsExchanged(ps.robotCoinsExchanged, 0),
     difficulty: normalizePokerDifficulty(ps.difficulty || 'normal'),
     lastCpuDelta: Number.isFinite(Number(ps.lastCpuDelta)) ? Math.round(Number(ps.lastCpuDelta)) : 0,
+    cpuResetAt: String(ps.cpuResetAt || '').trim() || null,
     lastCpuOutcome: (() => {
       const safe = String(ps.lastCpuOutcome || '').trim().toLowerCase();
       if (safe === 'win' || safe === 'loss' || safe === 'tie' || safe === 'idle') return safe;
@@ -9873,6 +10479,11 @@ function renderPokerOnlineTablePlayers(match = null, myUserId = getPokerCurrentU
 function renderPoker() {
   const ps = ensurePokerState();
   if (!ps) return;
+  const cpuDailyStateChanged = syncPokerCpuDailyResetState(ps);
+  if (cpuDailyStateChanged) {
+    persistPokerState();
+    saveGame(true);
+  }
   const onlineMode = isPokerOnlineMode();
   const myUserId = getPokerCurrentUserId();
   const onlineMatch = onlineMode ? sanitizePokerOnlineMatch(pokerOnlineMatch) : null;
@@ -9920,6 +10531,11 @@ function renderPoker() {
   const currentDifficulty = normalizePokerDifficulty(ps.difficulty || 'normal');
   const difficultyConfig = getPokerDifficultyConfig(currentDifficulty);
   const offlineCanStart = canStartOfflinePokerHand(ps);
+  const cpuResetRemainingMs = (!onlineMode && normalizePokerChipValue(ps.cpuChips, 0) <= 0)
+    ? getPokerCpuResetRemainingMs(ps)
+    : 0;
+  const cpuLockedUntilNextDay = !onlineMode && normalizePokerChipValue(ps.cpuChips, 0) <= 0 && cpuResetRemainingMs > 0;
+  const cpuCountdownText = cpuLockedUntilNextDay ? formatPokerResetCountdown(cpuResetRemainingMs) : '';
 
   if (elements.pokerPlayerLabel) elements.pokerPlayerLabel.textContent = 'Você';
   if (elements.pokerOpponentLabel) {
@@ -9939,6 +10555,8 @@ function renderPoker() {
   if (elements.pokerCpuCoinsInfo) {
     if (onlineMatch) {
       elements.pokerCpuCoinsInfo.textContent = `Rival online: ${opponentChips.toLocaleString('pt-BR')} moedas`;
+    } else if (cpuLockedUntilNextDay) {
+      elements.pokerCpuCoinsInfo.textContent = `CPU recarrega em ${cpuCountdownText} (próximo dia)`;
     } else if (active) {
       const signal = cpuRoundDeltaLive > 0
         ? `+${cpuRoundDeltaLive.toLocaleString('pt-BR')}`
@@ -10001,7 +10619,9 @@ function renderPoker() {
           ? 'Partida encerrada.'
           : `Modo on-line: conecte e inicie uma mesa com 2 a ${POKER_ONLINE_MAX_PLAYERS} jogadores.`);
     } else if (!active) {
-      if (!onlineMode && !offlineCanStart) {
+      if (!onlineMode && cpuLockedUntilNextDay) {
+        elements.pokerHintText.textContent = `🤖 CPU sem fichas. A mesa reinicia com 1.000 fichas em ${cpuCountdownText}.`;
+      } else if (!onlineMode && !offlineCanStart) {
         const needed = Math.max(0, POKER_MIN_BUYIN_CHIPS - playerChips);
         elements.pokerHintText.textContent = `Sem fichas suficientes para iniciar. Compre fichas na sala (${needed > 0 ? `faltam ${needed}` : 'mínimo atingido'}).`;
       } else {
@@ -10037,11 +10657,17 @@ function renderPoker() {
             ? 'Aguarde o fim da partida online para iniciar outra rodada.'
             : `Sem mesa ativa: cria uma nova mesa online com até ${POKER_ONLINE_MAX_PLAYERS} jogadores.`);
     } else {
-      elements.pokerNewHandBtn.disabled = false;
-      elements.pokerNewHandBtn.textContent = offlineCanStart ? '🃏 Nova Rodada' : '🪙 Comprar Fichas e Jogar';
-      elements.pokerNewHandBtn.title = offlineCanStart
-        ? ''
-        : `Você precisa de pelo menos ${POKER_MIN_BUYIN_CHIPS} fichas para começar.`;
+      const lockByCpu = cpuLockedUntilNextDay;
+      elements.pokerNewHandBtn.disabled = !!lockByCpu;
+      if (lockByCpu) {
+        elements.pokerNewHandBtn.textContent = `⏳ Reinicia em ${cpuCountdownText}`;
+        elements.pokerNewHandBtn.title = 'A CPU recarrega 1.000 fichas no próximo dia.';
+      } else {
+        elements.pokerNewHandBtn.textContent = offlineCanStart ? '🃏 Nova Rodada' : '🪙 Comprar Fichas e Jogar';
+        elements.pokerNewHandBtn.title = offlineCanStart
+          ? ''
+          : `Você precisa de pelo menos ${POKER_MIN_BUYIN_CHIPS} fichas para começar.`;
+      }
     }
   }
   if (elements.pokerFoldBtn) elements.pokerFoldBtn.disabled = !canAct;
@@ -10061,6 +10687,7 @@ function renderPoker() {
     elements.pokerDiffHardBtn.disabled = onlineMode;
   }
 
+  syncPokerCpuResetCountdownTimer(cpuLockedUntilNextDay);
   renderPokerOnlinePanel();
 }
 
@@ -10090,8 +10717,16 @@ function pokerStartHand() {
   if (!ps) return;
   ps.playerChips = normalizePokerChipValue(ps.playerChips, POKER_PLAYER_START_CHIPS);
   ps.cpuChips = normalizePokerChipValue(ps.cpuChips, POKER_CPU_START_CHIPS);
-  if (ps.cpuChips < POKER_MIN_BUYIN_CHIPS) {
-    ps.cpuChips = POKER_CPU_START_CHIPS;
+  syncPokerCpuDailyResetState(ps);
+  const cpuResetRemainingMs = getPokerCpuResetRemainingMs(ps);
+  const cpuLockedUntilNextDay = normalizePokerChipValue(ps.cpuChips, 0) <= 0 && cpuResetRemainingMs > 0;
+  if (cpuLockedUntilNextDay) {
+    ps.actionText = `⏳ CPU sem fichas. Reinício automático em ${formatPokerResetCountdown(cpuResetRemainingMs)} (próximo dia).`;
+    persistPokerState();
+    saveGame(true);
+    renderPoker();
+    showToast('⏳ A CPU zerou as fichas. Nova mesa liberada amanhã.');
+    return;
   }
   ps.handStartCpuChips = Math.max(0, Number(ps.cpuChips || 0) || 0);
   if (!canStartOfflinePokerHand(ps)) {
@@ -10214,6 +10849,7 @@ function pokerSettleHand(ps, result = 'tie', reason = '') {
   }
   ps.pot = 0;
   pokerResetStreetBets(ps);
+  syncPokerCpuDailyResetState(ps);
   persistPokerState();
   saveGame(true);
   renderPoker();
@@ -10980,6 +11616,20 @@ function normalizePlayerRoomMessage(entry = {}) {
   const maintenanceMessage = sanitizeAdminMaintenanceText(
     entry.maintenanceMessage || entry.text || ''
   );
+  const adminNewsTargetId = String(
+    entry.adminNewsTargetId || entry.targetNewsId || entry.targetId || ''
+  ).trim().slice(0, 120);
+  const adminNewsTitle = sanitizeAdminNewsTitle(entry.adminNewsTitle || entry.title || '');
+  const adminNewsMediaKindRaw = normalizeAdminNewsMediaKind(entry.adminNewsMediaKind || entry.mediaKind || '');
+  const adminNewsMediaUrl = sanitizeAdminNewsMediaValue(
+    entry.adminNewsMediaUrl || entry.adminNewsMediaData || entry.mediaUrl || entry.mediaData || '',
+    adminNewsMediaKindRaw
+  );
+  const adminNewsMediaKind = adminNewsMediaUrl ? adminNewsMediaKindRaw : '';
+  const adminNewsMediaPoster = sanitizeAdminNewsMediaValue(
+    entry.adminNewsMediaPoster || entry.mediaPoster || '',
+    'image'
+  );
   const adminNewsExpiresAt = normalizeAdminNewsIso(
     entry.adminNewsExpiresAt,
     normalizeAdminNewsIso(
@@ -11021,6 +11671,11 @@ function normalizePlayerRoomMessage(entry = {}) {
     inviteSessionId,
     maintenanceActive: kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND ? maintenanceActive : false,
     maintenanceMessage: kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND ? maintenanceMessage : '',
+    adminNewsTargetId: kind === PLAYER_ROOM_ADMIN_NEWS_DELETE_KIND ? adminNewsTargetId : '',
+    adminNewsTitle: kind === PLAYER_ROOM_ADMIN_NEWS_KIND ? adminNewsTitle : '',
+    adminNewsMediaKind: kind === PLAYER_ROOM_ADMIN_NEWS_KIND ? adminNewsMediaKind : '',
+    adminNewsMediaUrl: kind === PLAYER_ROOM_ADMIN_NEWS_KIND ? adminNewsMediaUrl : '',
+    adminNewsMediaPoster: kind === PLAYER_ROOM_ADMIN_NEWS_KIND ? adminNewsMediaPoster : '',
     adminNewsExpiresAt: kind === PLAYER_ROOM_ADMIN_NEWS_KIND ? adminNewsExpiresAt : '',
     userId: String(entry.userId || ''),
     username: String(entry.username || 'Jogador').trim().slice(0, 50) || 'Jogador',
@@ -11040,7 +11695,16 @@ function isValidPlayerRoomMessage(message = {}) {
   if (message.kind === 'animated_sticker') return !!String(message.mediaData || '').trim() || !!String(message.mediaCaption || '').trim();
   if (message.kind === 'call') return !!String(message.callSessionId || '').trim();
   if (message.kind === 'poker_invite') return !!String(message.text || '').trim() || String(message.inviteGame || '') === 'poker_online';
-  if (message.kind === PLAYER_ROOM_ADMIN_NEWS_KIND) return !!sanitizeAdminNewsText(message.text || '');
+  if (message.kind === PLAYER_ROOM_ADMIN_NEWS_KIND) {
+    const hasText = !!sanitizeAdminNewsText(message.text || '');
+    const hasTitle = !!sanitizeAdminNewsTitle(message.adminNewsTitle || '');
+    const kind = normalizeAdminNewsMediaKind(message.adminNewsMediaKind || '');
+    const hasMedia = !!sanitizeAdminNewsMediaValue(message.adminNewsMediaUrl || '', kind);
+    return hasText || hasTitle || hasMedia;
+  }
+  if (message.kind === PLAYER_ROOM_ADMIN_NEWS_DELETE_KIND) {
+    return !!String(message.adminNewsTargetId || '').trim();
+  }
   if (message.kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND) {
     if (message.maintenanceActive) {
       return !!sanitizeAdminMaintenanceText(message.maintenanceMessage || message.text || '');
@@ -13813,6 +14477,9 @@ function bindPlayerRoomKeyboardViewportHandlers() {
 
 function isDuplicatePlayerRoomMessage(nextMessage) {
   const next = normalizePlayerRoomMessage(nextMessage);
+  if (next.kind === PLAYER_ROOM_ADMIN_NEWS_KIND || next.kind === PLAYER_ROOM_ADMIN_NEWS_DELETE_KIND) {
+    return false;
+  }
   return playerRoomHistory.some((msg) => {
     if (msg.id && next.id && String(msg.id) === String(next.id)) return true;
     if (String(msg.kind || 'text') !== String(next.kind || 'text')) return false;
@@ -13875,7 +14542,10 @@ function getPlayerRoomNotificationPreview(message = {}) {
   if (kind === 'animated_sticker') return '✨ Enviou uma figurinha animada';
   if (kind === 'sticker') return `${message?.stickerEmoji || '😀'} ${message?.stickerLabel || 'Figurinha'}`;
   if (kind === 'poker_invite') return text || '🃏 Convite para Poker online';
-  if (kind === PLAYER_ROOM_ADMIN_NEWS_KIND) return text || '📰 Nova notícia do admin';
+  if (kind === PLAYER_ROOM_ADMIN_NEWS_KIND) {
+    const title = sanitizeAdminNewsTitle(message?.adminNewsTitle || message?.title || '');
+    return title || text || '📰 Nova notícia do admin';
+  }
   if (kind === PLAYER_ROOM_ADMIN_MAINTENANCE_KIND) {
     return message?.maintenanceActive
       ? (text || '🛠️ Modo manutenção ativado pelo admin')
@@ -14049,13 +14719,31 @@ function handlePlayerRoomAdminNewsMessage(message = {}) {
     icon: '📰',
     title: 'NOTÍCIA DO ADMIN',
     name: senderName,
-    ability: entry.text
+    ability: sanitizeAdminNewsTitle(entry.title || '') || entry.text || 'Nova notícia no jornal.'
   });
+}
+
+function handlePlayerRoomAdminNewsDeleteMessage(message = {}) {
+  if (String(message?.kind || '').trim().toLowerCase() !== PLAYER_ROOM_ADMIN_NEWS_DELETE_KIND) return false;
+  const targetId = String(message?.adminNewsTargetId || '').trim();
+  if (!targetId) return false;
+
+  const { removed } = removeAdminNewsEntryLocally(targetId, { persist: true, silent: true });
+  if (!removed) return true;
+
+  if (adminNewsEditingId && adminNewsEditingId === targetId) {
+    resetAdminNewsComposerInputs({ keepStatus: false });
+  }
+  return true;
 }
 
 function appendPlayerRoomMessage(message) {
   const normalized = normalizePlayerRoomMessage(message);
   if (!isValidPlayerRoomMessage(normalized)) return;
+  if (normalized.kind === PLAYER_ROOM_ADMIN_NEWS_DELETE_KIND) {
+    handlePlayerRoomAdminNewsDeleteMessage(normalized);
+    return;
+  }
   if (isPlayerRoomAdminNewsExpiredMessage(normalized)) return;
   if (isDuplicatePlayerRoomMessage(normalized)) return;
 
@@ -18267,17 +18955,28 @@ function syncGlobalHelpVisibility() {
     if (elements.globalHelpModal) elements.globalHelpModal.classList.remove('active');
     if (elements.appIntroModal) elements.appIntroModal.classList.remove('active');
   }
+  syncHelpGuideFocusMode();
+}
+
+function syncHelpGuideFocusMode() {
+  try {
+    const helpOpen = !!(elements.globalHelpModal && elements.globalHelpModal.classList.contains('active'));
+    const introOpen = !!(elements.appIntroModal && elements.appIntroModal.classList.contains('active'));
+    document.body.classList.toggle('help-guide-open', helpOpen || introOpen);
+  } catch (e) {}
 }
 
 function openGlobalHelpModal() {
   if (!isLoggedIn) return;
   if (!elements.globalHelpModal) return;
   elements.globalHelpModal.classList.add('active');
+  syncHelpGuideFocusMode();
 }
 
 function closeGlobalHelpModal() {
   if (!elements.globalHelpModal) return;
   elements.globalHelpModal.classList.remove('active');
+  syncHelpGuideFocusMode();
 }
 
 function renderAppIntroStep() {
@@ -18314,6 +19013,7 @@ function openAppIntro(options = {}) {
   if (reset) appIntroStepIndex = 0;
   renderAppIntroStep();
   elements.appIntroModal.classList.add('active');
+  syncHelpGuideFocusMode();
 }
 
 function closeAppIntro(options = {}) {
@@ -18321,6 +19021,7 @@ function closeAppIntro(options = {}) {
   const markSeen = options.markSeen !== false;
   if (markSeen) markAppIntroAsSeen();
   elements.appIntroModal.classList.remove('active');
+  syncHelpGuideFocusMode();
 }
 
 function moveAppIntroStep(delta) {
@@ -21240,6 +21941,11 @@ function schedulePostLoginTasks() {
   }, 1200);
 
   deferTask(() => {
+    consumePendingNativeWorkLocationActions({ silent: true }).catch(() => {});
+    syncNativeWorkLocationMonitorState({ requestPermission: false }).catch(() => {});
+  }, 1320);
+
+  deferTask(() => {
     if (ARENA_DUEL_ENABLED) {
       ensureArenaConnection({ silent: true }).catch((e) => {
         console.warn('Falha ao iniciar arena após login:', e);
@@ -21926,7 +22632,7 @@ function openAdminUsersPanel() {
     showToast('⚠️ Acesso permitido apenas para admin.');
     return;
   }
-  if (elements.adminNewsInput) elements.adminNewsInput.value = '';
+  resetAdminNewsComposerInputs({ keepStatus: true });
   setAdminNewsComposerStatus('Aguardando envio.');
   const maintenanceState = getAdminMaintenanceState(gameState);
   if (elements.adminMaintenanceMessageInput) {
@@ -21956,18 +22662,55 @@ async function sendAdminNewsFromAdminPanel() {
     showToast('⚠️ Apenas o admin pode enviar notícias.');
     return;
   }
+  const title = sanitizeAdminNewsTitle(elements.adminNewsTitleInput?.value || '');
   const text = sanitizeAdminNewsText(elements.adminNewsInput?.value || '');
-  if (!text) {
-    setAdminNewsComposerStatus('Digite uma notícia para enviar.', true);
-    showToast('⚠️ Digite a notícia antes de enviar.');
+  const imageUrl = sanitizeAdminNewsMediaValue(elements.adminNewsImageUrlInput?.value || '', 'image');
+  const rawVideoInput = String(elements.adminNewsVideoUrlInput?.value || '').trim();
+  const fileVideoUrl = sanitizeAdminNewsMediaValue(adminNewsComposerVideoDataUrl, 'video');
+  const editingId = String(adminNewsEditingId || '').trim();
+  if (rawVideoInput && fileVideoUrl) {
+    setAdminNewsComposerStatus('Escolha vídeo por link OU vídeo enviado do dispositivo.', true);
+    showToast('⚠️ Use apenas uma origem de vídeo.');
+    return;
+  }
+  const youtubeUrl = sanitizeAdminNewsMediaValue(rawVideoInput, 'youtube');
+  const typedVideoUrl = youtubeUrl ? '' : sanitizeAdminNewsMediaValue(rawVideoInput, 'video');
+  const videoUrl = typedVideoUrl || fileVideoUrl;
+
+  if (imageUrl && (youtubeUrl || videoUrl)) {
+    setAdminNewsComposerStatus('Use apenas uma mídia: foto OU vídeo.', true);
+    showToast('⚠️ Escolha apenas foto ou vídeo na notícia.');
+    return;
+  }
+
+  let mediaKind = '';
+  let mediaUrl = '';
+  if (youtubeUrl) {
+    mediaKind = 'youtube';
+    mediaUrl = youtubeUrl;
+  } else if (videoUrl) {
+    mediaKind = 'video';
+    mediaUrl = videoUrl;
+  } else if (imageUrl) {
+    mediaKind = 'image';
+    mediaUrl = imageUrl;
+  }
+
+  if (!text && !title && !mediaUrl) {
+    setAdminNewsComposerStatus('Preencha título, texto ou mídia para enviar.', true);
+    showToast('⚠️ Digite a notícia ou adicione uma mídia.');
     return;
   }
 
   setAdminNewsComposerStatus('Enviando notícia...');
   const expiresAt = new Date(Date.now() + PLAYER_ROOM_ADMIN_NEWS_TTL_MS).toISOString();
   const sent = await sendPlayerRoomPayload({
+    id: editingId || undefined,
     kind: PLAYER_ROOM_ADMIN_NEWS_KIND,
     text,
+    adminNewsTitle: title,
+    adminNewsMediaKind: mediaKind,
+    adminNewsMediaUrl: mediaUrl,
     adminNewsExpiresAt: expiresAt
   }, { toastFail: '❌ Não consegui enviar a notícia agora.' });
 
@@ -21976,9 +22719,14 @@ async function sendAdminNewsFromAdminPanel() {
     return;
   }
 
-  if (elements.adminNewsInput) elements.adminNewsInput.value = '';
-  setAdminNewsComposerStatus('Notícia enviada com sucesso.');
-  showToast('📰 Notícia enviada para os jogadores.');
+  resetAdminNewsComposerInputs({ keepStatus: true });
+  if (editingId) {
+    setAdminNewsComposerStatus('Notícia atualizada com sucesso.');
+    showToast('📝 Notícia atualizada.');
+  } else {
+    setAdminNewsComposerStatus('Notícia enviada com sucesso.');
+    showToast('📰 Notícia enviada para os jogadores.');
+  }
 }
 
 async function sendAdminMaintenanceFromAdminPanel(active = true) {
@@ -24595,6 +25343,12 @@ function normalizeGameState(data) {
 
   if (!Array.isArray(merged.dailyTasks)) merged.dailyTasks = [];
   if (!Array.isArray(merged.workLog)) merged.workLog = [];
+  const parsedLastTaskResetMs = Date.parse(String(merged.lastTaskReset || '').trim());
+  if (Number.isFinite(parsedLastTaskResetMs)) {
+    merged.lastTaskReset = new Date(parsedLastTaskResetMs).toISOString();
+  } else {
+    merged.lastTaskReset = new Date().toISOString();
+  }
   merged.workLog = merged.workLog
     .filter((entry) => entry && typeof entry === 'object')
     .map((entry) => {
@@ -26243,7 +26997,7 @@ function addDailyTask() {
 }
 
   function toggleTask(id) {
-    const task = gameState.dailyTasks.find(t => t.id === id);
+    const task = gameState.dailyTasks.find((t) => String(t?.id) === String(id));
     if (task) {
       task.completed = !task.completed;
       gameState.tasksLastChangedAt = new Date().toISOString();
@@ -26284,7 +27038,7 @@ function addDailyTask() {
 
 async function editTask(id, event) {
   if (event) event.stopPropagation();
-  const task = gameState.dailyTasks.find(t => t.id === id);
+  const task = gameState.dailyTasks.find((t) => String(t?.id) === String(id));
   if (!task) return;
 
   const edited = prompt('Editar tarefa:', task.text || '');
@@ -26386,7 +27140,17 @@ function checkDailyTaskReset() {
   if (!gameState.dailyTasks) return;
 
   const now = new Date();
-  const lastReset = gameState.lastTaskReset ? new Date(gameState.lastTaskReset) : now;
+  const lastResetMs = Date.parse(String(gameState.lastTaskReset || '').trim());
+  const hasValidLastReset = Number.isFinite(lastResetMs);
+  const lastReset = hasValidLastReset ? new Date(lastResetMs) : now;
+
+  // Blindagem: se o valor salvo estiver inválido, evita reset inesperado de tarefas.
+  if (!hasValidLastReset) {
+    gameState.lastTaskReset = now.toISOString();
+    gameState.tasksLastChangedAt = gameState.tasksLastChangedAt || now.toISOString();
+    saveGame(true);
+    return;
+  }
 
   // Verifica se é um dia diferente (comparando dia, mês e ano)
   if (now.toDateString() !== lastReset.toDateString()) {
@@ -29760,6 +30524,8 @@ let _workLocationMonitorLastDistanceMeters = null;
 let _workLocationMonitorLastCheckAt = 0;
 let _workLocationLastActionAt = 0;
 let _workLocationPermissionPromptAt = 0;
+let _nativeWorkLocationMonitorPlugin = null;
+let _nativeWorkLocationSyncPromise = null;
 
 function toIsoLocalDate(dateObj) {
   if (!(dateObj instanceof Date) || !Number.isFinite(dateObj.getTime())) return '';
@@ -30560,6 +31326,211 @@ function shouldRequestWorkLocationPermissionAutomatically() {
   return true;
 }
 
+function getNativeWorkLocationMonitorPlugin() {
+  try {
+    const cap = window.Capacitor;
+    if (!cap || !isNativeCapacitorPlatform()) return null;
+    if (cap.Plugins?.WorkLocationMonitor) return cap.Plugins.WorkLocationMonitor;
+    if (!_nativeWorkLocationMonitorPlugin && typeof cap.registerPlugin === 'function') {
+      _nativeWorkLocationMonitorPlugin = cap.registerPlugin('WorkLocationMonitor');
+    }
+    return _nativeWorkLocationMonitorPlugin || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getStoredWorkTimerStartTime() {
+  try {
+    const value = Number(localStorage.getItem('work_start_time') || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+async function syncNativeWorkTimerStateWithMonitor({ running = null, startTime = null } = {}) {
+  if (!isNativeCapacitorPlatform()) return false;
+  const plugin = getNativeWorkLocationMonitorPlugin();
+  if (!plugin || typeof plugin.syncTimerState !== 'function') return false;
+
+  const fallbackStart = getStoredWorkTimerStartTime();
+  const parsedStart = Number(startTime);
+  const safeStart = Number.isFinite(parsedStart) && parsedStart > 0
+    ? parsedStart
+    : fallbackStart;
+  const safeRunning = typeof running === 'boolean' ? running : (safeStart > 0);
+
+  try {
+    await plugin.syncTimerState({
+      running: !!safeRunning,
+      startTime: safeRunning ? safeStart : 0
+    });
+    return true;
+  } catch (e) {
+    console.warn('Falha ao sincronizar timer no monitor nativo:', e);
+    return false;
+  }
+}
+
+async function resolveWorkLocationPointForNativeMonitor(job = ensureWorkJobDefaults()) {
+  const hasAddress = !!String(job?.address || '').trim();
+  let point = getWorkLocationPoint();
+  if (!point && hasAddress) {
+    point = await ensureWorkAddressCoordinates({ address: job.address, force: false, silent: true });
+  }
+  if (!point) return null;
+  const lat = Number(point.lat);
+  const lng = Number(point.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+function stopWorkLocationMonitorIntervalOnly() {
+  if (_workLocationMonitorInterval) {
+    clearInterval(_workLocationMonitorInterval);
+    _workLocationMonitorInterval = null;
+  }
+}
+
+async function syncNativeWorkLocationMonitorState({ requestPermission = false, forceDisable = false } = {}) {
+  if (!isNativeCapacitorPlatform()) return false;
+  if (_nativeWorkLocationSyncPromise) return _nativeWorkLocationSyncPromise;
+
+  _nativeWorkLocationSyncPromise = (async () => {
+    const plugin = getNativeWorkLocationMonitorPlugin();
+    if (!plugin) return false;
+
+    // Timer sempre sincronizado, mesmo se o monitor estiver desativado.
+    await syncNativeWorkTimerStateWithMonitor();
+
+    if (forceDisable) {
+      if (typeof plugin.stopMonitor === 'function') {
+        try { await plugin.stopMonitor(); } catch (e) {}
+      }
+      return true;
+    }
+
+    const job = ensureWorkJobDefaults();
+    const hasAddress = !!String(job?.address || '').trim();
+    const isEligible = !!(job?.name && job?.geoMonitor?.enabled && (hasWorkLocationPoint() || hasAddress));
+    if (!isEligible) {
+      if (typeof plugin.stopMonitor === 'function') {
+        try { await plugin.stopMonitor(); } catch (e) {}
+      }
+      return true;
+    }
+
+    const point = await resolveWorkLocationPointForNativeMonitor(job);
+    if (!point) {
+      if (typeof plugin.stopMonitor === 'function') {
+        try { await plugin.stopMonitor(); } catch (e) {}
+      }
+      return false;
+    }
+
+    if (typeof plugin.checkPermissions === 'function') {
+      try {
+        let perm = await plugin.checkPermissions();
+        const grantedDirect = parseNativeBooleanResult(perm?.granted);
+        const locationDirect = parseNativeBooleanResult(perm?.locationGranted);
+        let hasLocationPermission = (locationDirect !== false) && (grantedDirect !== false);
+
+        if (!hasLocationPermission && requestPermission && typeof plugin.requestPermission === 'function') {
+          perm = await plugin.requestPermission();
+          const grantedAfter = parseNativeBooleanResult(perm?.granted);
+          const locationAfter = parseNativeBooleanResult(perm?.locationGranted);
+          hasLocationPermission = (locationAfter !== false) && (grantedAfter !== false);
+        }
+
+        if (!hasLocationPermission) {
+          return false;
+        }
+      } catch (e) {
+        console.warn('Falha ao validar permissões do monitor nativo:', e);
+        return false;
+      }
+    }
+
+    if (typeof plugin.startMonitor === 'function') {
+      try {
+        await plugin.startMonitor({
+          workLat: point.lat,
+          workLng: point.lng,
+          radiusMeters: getWorkLocationRadiusMeters(),
+          promptCooldownMs: WORK_LOCATION_PROMPT_COOLDOWN_MS,
+          autoStopDistanceMeters: WORK_TIMER_AUTO_STOP_DISTANCE_METERS
+        });
+      } catch (e) {
+        console.warn('Falha ao iniciar monitor nativo de trabalho:', e);
+        return false;
+      }
+    }
+
+    return true;
+  })().finally(() => {
+    _nativeWorkLocationSyncPromise = null;
+  });
+
+  return _nativeWorkLocationSyncPromise;
+}
+
+async function consumePendingNativeWorkLocationActions({ silent = true } = {}) {
+  if (!isNativeCapacitorPlatform()) return false;
+  const plugin = getNativeWorkLocationMonitorPlugin();
+  if (!plugin || typeof plugin.consumePendingActions !== 'function') return false;
+
+  try {
+    const result = await plugin.consumePendingActions();
+    const pendingStart = Number(result?.pendingStartTime || 0);
+    const pendingStop = Number(result?.pendingStopTime || 0);
+    const pendingStopStart = Number(result?.pendingStopStartTime || 0);
+    let changed = false;
+
+    if (pendingStart > 0) {
+      if (window.WorkTimer && typeof window.WorkTimer.start === 'function') {
+        window.WorkTimer.start({ startTime: pendingStart, source: 'native-notification' });
+      } else {
+        localStorage.setItem('work_start_time', String(pendingStart));
+        window.dispatchEvent(new CustomEvent('workTimerStarted', {
+          detail: { startTime: pendingStart, source: 'native-notification' }
+        }));
+      }
+      changed = true;
+      if (!silent) showToast('⏱️ Ponto iniciado pela notificação.');
+    }
+
+    if (pendingStop > 0) {
+      const fallbackStart = getStoredWorkTimerStartTime();
+      const stopStart = pendingStopStart > 0 ? pendingStopStart : fallbackStart;
+      if (window.WorkTimer && typeof window.WorkTimer.stop === 'function') {
+        window.WorkTimer.stop({
+          startTime: stopStart,
+          endTime: pendingStop,
+          source: 'native-auto-stop'
+        });
+      } else {
+        if (typeof window.finishWorkSession === 'function') {
+          window.finishWorkSession(stopStart, pendingStop);
+        }
+        localStorage.removeItem('work_start_time');
+        window.dispatchEvent(new CustomEvent('workTimerStopped', {
+          detail: { startTime: stopStart, endTime: pendingStop, source: 'native-auto-stop' }
+        }));
+      }
+      changed = true;
+      if (!silent) showToast('⏹️ Ponto encerrado automaticamente.');
+    }
+
+    await syncNativeWorkTimerStateWithMonitor();
+    return changed;
+  } catch (e) {
+    console.warn('Falha ao consumir ações pendentes do monitor nativo:', e);
+    return false;
+  }
+}
+
 async function checkWorkLocationProximity({ manual = false, allowPermissionPrompt = false } = {}) {
   console.log('[WORK-LOC] checkWorkLocationProximity', { manual, allowPermissionPrompt });
   if (_workLocationMonitorBusy) {
@@ -30684,17 +31655,23 @@ async function checkWorkLocationProximity({ manual = false, allowPermissionPromp
 }
 
 function stopWorkLocationMonitor() {
-  if (_workLocationMonitorInterval) {
-    clearInterval(_workLocationMonitorInterval);
-    _workLocationMonitorInterval = null;
-  }
+  stopWorkLocationMonitorIntervalOnly();
+  syncNativeWorkLocationMonitorState({ forceDisable: true }).catch(() => {});
 }
 
 function startWorkLocationMonitor() {
-  stopWorkLocationMonitor();
+  stopWorkLocationMonitorIntervalOnly();
   const job = ensureWorkJobDefaults();
   const hasAddress = !!String(job?.address || '').trim();
   if (!job || !job.name || !job.geoMonitor?.enabled || (!hasWorkLocationPoint() && !hasAddress)) {
+    syncNativeWorkLocationMonitorState({ forceDisable: true }).catch(() => {});
+    return;
+  }
+
+  if (isNativeCapacitorPlatform()) {
+    syncNativeWorkLocationMonitorState({
+      requestPermission: shouldRequestWorkLocationPermissionAutomatically()
+    }).catch(() => {});
     return;
   }
 
@@ -31523,10 +32500,11 @@ window.addWorkRecord = function() {
 }
 
 // Função para finalizar sessão de tempo (Cronômetro)
-window.finishWorkSession = function(startTime) {
+window.finishWorkSession = function(startTime, endTimeOverride) {
   if (!gameState) return;
   
-  const now = Date.now();
+  const parsedEnd = Number(endTimeOverride);
+  const now = Number.isFinite(parsedEnd) && parsedEnd > 0 ? parsedEnd : Date.now();
   const parsedStart = Number(startTime);
   const normalizedStart = Number.isFinite(parsedStart) && parsedStart > 0 ? parsedStart : now;
   let duration = now - normalizedStart;
@@ -31586,7 +32564,7 @@ window.finishWorkSession = function(startTime) {
       value: financialValue,
       type: 'income',
       category: 'Salário',
-      date: new Date().toISOString()
+      date: new Date(now).toISOString()
     });
   }
 
@@ -32984,11 +33962,15 @@ if (elements.globalHelpModal) {
     if (event.target === elements.globalHelpModal) closeGlobalHelpModal();
   });
 }
+const replayIntroFromHelp = () => {
+  closeGlobalHelpModal();
+  openAppIntro({ force: true, reset: true });
+};
 if (elements.globalHelpReplayIntroBtn) {
-  elements.globalHelpReplayIntroBtn.addEventListener('click', () => {
-    closeGlobalHelpModal();
-    openAppIntro({ force: true, reset: true });
-  });
+  elements.globalHelpReplayIntroBtn.addEventListener('click', replayIntroFromHelp);
+}
+if (elements.globalHelpReplayIntroTopBtn) {
+  elements.globalHelpReplayIntroTopBtn.addEventListener('click', replayIntroFromHelp);
 }
 if (elements.appIntroSkipBtn) {
   elements.appIntroSkipBtn.addEventListener('click', () => closeAppIntro({ markSeen: true }));
@@ -45005,6 +45987,158 @@ const BibleNotesStore = {
     return tagsStr.split(',').map(t => t.trim()).filter(Boolean);
   },
 
+  _normalizeNote(note = {}, fallbackId = '') {
+    const src = note && typeof note === 'object' ? note : {};
+    const rawTags = Array.isArray(src.tags)
+      ? src.tags
+      : (typeof src.tags === 'string' ? this._parseTags(src.tags) : []);
+    const tags = rawTags
+      .map((tag) => String(tag || '').trim())
+      .filter(Boolean)
+      .slice(0, 12);
+    const reference = String(src.reference || src.ref || '').trim().slice(0, 140);
+    const content = String(src.content || src.text || src.note || '').trim();
+    if (!content) return null;
+    const createdAt = String(src.createdAt || src.created_at || src.updatedAt || src.updated_at || new Date().toISOString());
+    const updatedAt = String(src.updatedAt || src.updated_at || createdAt);
+    const id = String(src.id || fallbackId || `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`).trim();
+    return {
+      id,
+      reference,
+      content,
+      tags,
+      createdAt,
+      updatedAt
+    };
+  },
+
+  _dedupeNotes(list = []) {
+    const map = new Map();
+    (Array.isArray(list) ? list : []).forEach((raw, idx) => {
+      const safe = this._normalizeNote(raw, `legacy_${idx}`);
+      if (!safe) return;
+      const key = String(safe.id || '').trim() || `${this._normalize(safe.reference)}::${this._normalize(safe.content)}`;
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, safe);
+        return;
+      }
+      const prevTime = Number.isFinite(Date.parse(String(prev.updatedAt || ''))) ? Date.parse(String(prev.updatedAt || '')) : 0;
+      const nextTime = Number.isFinite(Date.parse(String(safe.updatedAt || ''))) ? Date.parse(String(safe.updatedAt || '')) : 0;
+      if (nextTime >= prevTime) map.set(key, safe);
+    });
+    return Array.from(map.values())
+      .sort((a, b) => {
+        const aTime = Number.isFinite(Date.parse(String(a.updatedAt || a.createdAt || ''))) ? Date.parse(String(a.updatedAt || a.createdAt || '')) : 0;
+        const bTime = Number.isFinite(Date.parse(String(b.updatedAt || b.createdAt || ''))) ? Date.parse(String(b.updatedAt || b.createdAt || '')) : 0;
+        return bTime - aTime;
+      })
+      .slice(0, 800);
+  },
+
+  _collectUserHintTokens() {
+    const hints = new Set();
+    const pushHint = (raw) => {
+      const safe = String(raw || '').trim();
+      if (!safe) return;
+      hints.add(safe.toLowerCase());
+      const normalized = this._normalize(safe);
+      if (normalized) hints.add(normalized);
+      if (safe.includes('@')) {
+        const localPart = safe.split('@')[0] || '';
+        if (localPart) {
+          hints.add(localPart.toLowerCase());
+          const normLocal = this._normalize(localPart);
+          if (normLocal) hints.add(normLocal);
+        }
+      }
+    };
+
+    pushHint(gameState?.username);
+    pushHint(gameState?.name);
+    try {
+      if (typeof getSession === 'function') pushHint(getSession());
+    } catch (e) {}
+    try {
+      pushHint(localStorage.getItem('ur_session'));
+    } catch (e) {}
+    try {
+      pushHint(localStorage.getItem('ur_last_user'));
+    } catch (e) {}
+
+    return Array.from(hints).filter(Boolean);
+  },
+
+  _collectLocalCandidateKeys() {
+    const keys = [];
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = String(localStorage.key(i) || '').trim();
+        if (!key) continue;
+        if (key === 'bible_notes_local' || key.startsWith('bible_notes_')) {
+          keys.push(key);
+        }
+      }
+    } catch (e) {}
+    return Array.from(new Set(keys));
+  },
+
+  _readLocalNotesByKey(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return this._dedupeNotes(parsed);
+    } catch (e) {
+      return [];
+    }
+  },
+
+  _tryRecoverFromLegacyLocalKeys(currentKey) {
+    const candidates = this._collectLocalCandidateKeys().filter((key) => key !== currentKey);
+    if (!candidates.length) return [];
+
+    const hints = this._collectUserHintTokens();
+    const scored = candidates.map((key) => {
+      const notes = this._readLocalNotesByKey(key);
+      if (!notes.length) return null;
+      const suffix = String(key || '').replace(/^bible_notes_/i, '').trim().toLowerCase();
+      const normalizedSuffix = this._normalize(suffix);
+      let matchScore = 0;
+      hints.forEach((token) => {
+        const safeToken = String(token || '').trim().toLowerCase();
+        if (!safeToken) return;
+        if (suffix && (suffix.includes(safeToken) || safeToken.includes(suffix))) matchScore += 2;
+        if (normalizedSuffix && (normalizedSuffix.includes(safeToken) || safeToken.includes(normalizedSuffix))) matchScore += 2;
+      });
+      return {
+        key,
+        notes,
+        count: notes.length,
+        matchScore
+      };
+    }).filter(Boolean);
+
+    if (!scored.length) return [];
+    scored.sort((a, b) => {
+      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+      if (b.count !== a.count) return b.count - a.count;
+      const aTime = Number.isFinite(Date.parse(String(a.notes?.[0]?.updatedAt || a.notes?.[0]?.createdAt || ''))) ? Date.parse(String(a.notes?.[0]?.updatedAt || a.notes?.[0]?.createdAt || '')) : 0;
+      const bTime = Number.isFinite(Date.parse(String(b.notes?.[0]?.updatedAt || b.notes?.[0]?.createdAt || ''))) ? Date.parse(String(b.notes?.[0]?.updatedAt || b.notes?.[0]?.createdAt || '')) : 0;
+      return bTime - aTime;
+    });
+
+    const winner = scored[0];
+    if (!winner || !winner.notes?.length) return [];
+    if (winner.matchScore <= 0) {
+      const withNotes = scored.filter((entry) => entry.count > 0);
+      if (withNotes.length !== 1) return [];
+    }
+    console.log(`♻️ Recuperando ${winner.notes.length} anotações da Bíblia da chave local antiga:`, winner.key);
+    return winner.notes;
+  },
+
   _canSupabase() {
     return typeof useSupabase === 'function' && useSupabase() &&
       window.SupabaseService && typeof window.SupabaseService.getBibleNotes === 'function';
@@ -45017,14 +46151,15 @@ const BibleNotesStore = {
       try {
         const notes = await window.SupabaseService.getBibleNotes();
         if (Array.isArray(notes) && notes.length > 0) {
-          this.cache = notes.map(n => ({
+          this.cache = this._dedupeNotes(notes.map(n => ({
             id: n.id,
             reference: n.reference || '',
             content: n.content || '',
             tags: Array.isArray(n.tags) ? n.tags : [],
             createdAt: n.created_at,
             updatedAt: n.updated_at
-          }));
+          })));
+          this._saveLocal();
           this.loaded = true;
           return this.cache;
         }
@@ -45033,11 +46168,18 @@ const BibleNotesStore = {
       }
     }
 
+    const currentKey = this._getLocalKey();
     try {
-      const raw = localStorage.getItem(this._getLocalKey());
-      this.cache = raw ? JSON.parse(raw) : [];
+      this.cache = this._readLocalNotesByKey(currentKey);
     } catch (e) {
       this.cache = [];
+    }
+    if (!Array.isArray(this.cache) || this.cache.length === 0) {
+      const recovered = this._tryRecoverFromLegacyLocalKeys(currentKey);
+      if (Array.isArray(recovered) && recovered.length > 0) {
+        this.cache = recovered;
+        this._saveLocal();
+      }
     }
     this.loaded = true;
     return this.cache;
@@ -45087,6 +46229,7 @@ const BibleNotesStore = {
       updatedAt: new Date().toISOString()
     };
     this.cache.unshift(note);
+    this.cache = this._dedupeNotes(this.cache);
     this._saveLocal();
     return note;
   },
@@ -48639,6 +49782,36 @@ elements.adminNewsSendBtn?.addEventListener('click', () => {
     showToast(`❌ ${error?.message || 'Falha ao enviar notícia.'}`);
   });
 });
+elements.adminNewsCancelEditBtn?.addEventListener('click', () => {
+  resetAdminNewsComposerInputs({ keepStatus: false });
+  showToast('ℹ️ Edição cancelada.');
+});
+elements.adminNewsVideoPickBtn?.addEventListener('click', () => {
+  if (!isAdminControlUser(gameState)) {
+    showToast('⚠️ Apenas o admin pode anexar vídeo na notícia.');
+    return;
+  }
+  elements.adminNewsVideoFileInput?.click();
+});
+elements.adminNewsVideoClearBtn?.addEventListener('click', () => {
+  const hadVideo = !!String(adminNewsComposerVideoDataUrl || '').trim()
+    || !!String(elements.adminNewsVideoUrlInput?.value || '').trim();
+  clearAdminNewsComposerVideoSelection({ clearUrlInput: true });
+  setAdminNewsComposerStatus('Vídeo removido da notícia.');
+  if (hadVideo) showToast('🧹 Vídeo removido.');
+});
+elements.adminNewsVideoFileInput?.addEventListener('change', async (event) => {
+  const input = event?.target;
+  const file = input && input.files && input.files[0] ? input.files[0] : null;
+  try {
+    await handleAdminNewsVideoFileSelection(file);
+  } finally {
+    if (input) input.value = '';
+  }
+});
+elements.adminNewsVideoUrlInput?.addEventListener('input', () => {
+  handleAdminNewsVideoUrlInputChanged();
+});
 elements.adminMaintenanceEnableBtn?.addEventListener('click', () => {
   sendAdminMaintenanceFromAdminPanel(true).catch((error) => {
     console.error('Erro ao ativar manutenção do admin:', error);
@@ -48704,6 +49877,8 @@ document.addEventListener('keydown', (event) => {
   }
 });
 updateAdminPanelVisibility();
+setAdminNewsComposerEditState('');
+updateAdminNewsVideoComposerLabel();
 
 // --- Lógica do FAB (Botão Flutuante) ---
 if (elements.fabMainBtn) {
@@ -49129,7 +50304,11 @@ document.addEventListener('visibilitychange', () => {
   } else {
     syncPlayerRoomMusicContext(isPlayerRoomTabActive() ? 'room' : '');
     syncArenaMusicContext(isArenaTabActive() ? 'arena' : '');
-    checkWorkLocationProximity({ manual: false, allowPermissionPrompt: true }).catch(() => {});
+    consumePendingNativeWorkLocationActions({ silent: true }).catch(() => {});
+    syncNativeWorkLocationMonitorState({ requestPermission: false }).catch(() => {});
+    if (!isNativeCapacitorPlatform()) {
+      checkWorkLocationProximity({ manual: false, allowPermissionPrompt: true }).catch(() => {});
+    }
     if (isLoggedIn && gameState && useSupabase()) {
       refreshCloudProfileIfChanged({ force: true, silentUi: true }).catch(() => {});
       refreshGlobalRankProfilesFromCloud({ force: true, silent: true }).catch(() => {});
@@ -50629,15 +51808,22 @@ async function stopWorkNotification() {
 window.addEventListener('workTimerStarted', (e) => {
   const startTime = e?.detail?.startTime || localStorage.getItem('work_start_time');
   startWorkNotification(startTime);
+  syncNativeWorkTimerStateWithMonitor({ running: true, startTime: Number(startTime || 0) }).catch(() => {});
 });
 
 window.addEventListener('workTimerStopped', (e) => {
   stopWorkNotification();
+  syncNativeWorkTimerStateWithMonitor({ running: false, startTime: 0 }).catch(() => {});
 });
 
 try {
   const persistedStart = Number(localStorage.getItem('work_start_time') || 0);
-  if (persistedStart > 0) startWorkNotification(persistedStart);
+  if (persistedStart > 0) {
+    startWorkNotification(persistedStart);
+    syncNativeWorkTimerStateWithMonitor({ running: true, startTime: persistedStart }).catch(() => {});
+  } else {
+    syncNativeWorkTimerStateWithMonitor({ running: false, startTime: 0 }).catch(() => {});
+  }
 } catch (e) {}
 
 // Notificar contas vencendo hoje com ação para abrir financeiro
