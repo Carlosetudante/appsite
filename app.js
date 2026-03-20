@@ -31361,6 +31361,10 @@ async function syncNativeWorkTimerStateWithMonitor({ running = null, startTime =
     : fallbackStart;
   const safeRunning = typeof running === 'boolean' ? running : (safeStart > 0);
 
+  // Evita disparar sync "running=false" em builds Android antigos do plugin nativo,
+  // que podiam iniciar foreground service sem promover para notificação em tempo hábil.
+  if (!safeRunning) return true;
+
   try {
     await plugin.syncTimerState({
       running: !!safeRunning,
