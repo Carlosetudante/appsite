@@ -2811,7 +2811,7 @@ const PLAYER_ROOM_ADMIN_NEWS_MEDIA_URL_MAX_LEN = 2048;
 const PLAYER_ROOM_MAX_MEDIA_BYTES = 850 * 1024;
 const PLAYER_ROOM_MAX_VIDEO_BYTES = 2 * 1024 * 1024;
 const PLAYER_ROOM_ADMIN_NEWS_IMAGE_FILE_MAX_BYTES = PLAYER_ROOM_MAX_MEDIA_BYTES;
-const PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES = 8 * 1024 * 1024;
+const PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES = 80 * 1024 * 1024;
 const PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_IMAGE_MAX_LEN = Math.floor((PLAYER_ROOM_ADMIN_NEWS_IMAGE_FILE_MAX_BYTES * 4) / 3) + 4096;
 const PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_VIDEO_MAX_LEN = Math.floor((PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES * 4) / 3) + 4096;
 const PLAYER_ROOM_MAX_AUDIO_MS = 25000;
@@ -26317,6 +26317,53 @@ async function refreshCloudProfileIfChanged({ force = false, silentUi = true } =
   }
 }
 
+function persistGameStateLocalFast({ silent = true, includeBackup = false, reason = '' } = {}) {
+  if (!isLoggedIn || !gameState) return { ok: false, reason: 'not_logged' };
+
+  const sessionIdentity = String(getSession() || gameState.username || '').trim();
+  let users = getUsers();
+  const resolvedLocalKey = getStoredUserKeyByEmail(sessionIdentity, users);
+  const username = resolvedLocalKey || sessionIdentity;
+  if (!username) return { ok: false, reason: 'missing_user' };
+
+  try {
+    if (!users[username]) {
+      users[username] = { character: gameState };
+    } else {
+      users[username].character = gameState;
+    }
+
+    const saveResult = setUsers(users, { username });
+    if (saveResult?.clearedBackup) {
+      console.warn('Backup local removido para liberar espaço.');
+    }
+    if (saveResult?.compacted) {
+      console.warn('Backup local compactado por falta de espaço.');
+      if (!silent) {
+        showToast('⚠️ Espaço do navegador cheio. Backup local compactado.');
+      }
+    }
+
+    if (includeBackup) {
+      createAutoBackup();
+    }
+
+    if (reason) {
+      console.log(`[SAVE-LOCAL] persistido (${reason})`);
+    }
+    return { ok: true, username, saveResult };
+  } catch (e) {
+    if (isQuotaExceededError(e)) {
+      console.warn('Falha ao salvar backup local por falta de espaço.', e);
+      if (!silent) {
+        showToast('⚠️ Sem espaço no navegador. O backup local não pôde ser salvo.');
+      }
+      return { ok: false, reason: 'quota' };
+    }
+    throw e;
+  }
+}
+
 async function saveGame(arg) {
   const silent = typeof arg === 'boolean' ? arg : false;
   if (!isLoggedIn || !gameState) return;
@@ -26369,6 +26416,13 @@ async function saveGame(arg) {
       dedupeWorkLogEntries({ persist: false });
     } catch (e) {}
 
+    // Persistência local imediata: evita perda de dados se o app for fechado durante a sync da nuvem.
+    try {
+      persistGameStateLocalFast({ silent: true, includeBackup: false, reason: 'save-start' });
+    } catch (e) {
+      console.warn('Falha na persistência local imediata:', e);
+    }
+
     // Se está usando Supabase, sincroniza com a nuvem
     if (useSupabase()) {
       try {
@@ -26398,39 +26452,10 @@ async function saveGame(arg) {
     }
     
     // Também salva localmente (backup offline)
-    if (username) {
-      if (!users[username]) {
-        users[username] = { character: gameState };
-      } else {
-        users[username].character = gameState;
-      }
-      try {
-        const saveResult = setUsers(users, { username });
-        if (saveResult?.clearedBackup) {
-          console.warn('Backup local removido para liberar espaço.');
-        }
-        if (saveResult?.compacted) {
-          console.warn('Backup local compactado por falta de espaço.');
-          if (!silent) {
-            showToast('⚠️ Espaço do navegador cheio. Backup local compactado. Considere exportar e limpar dados antigos.');
-          }
-        }
-      } catch (e) {
-        if (isQuotaExceededError(e)) {
-          console.warn('Falha ao salvar backup local por falta de espaço.', e);
-          if (!silent) {
-            showToast('⚠️ Sem espaço no navegador. O backup local não pôde ser salvo. Exporte seus dados e limpe o armazenamento.');
-          }
-        } else {
-          throw e;
-        }
-      }
-    } else {
-      console.warn('saveGame sem usuário de sessão; backup local ignorado.');
+    const localPersist = persistGameStateLocalFast({ silent, includeBackup: true, reason: 'save-final' });
+    if (!localPersist?.ok && !silent) {
+      showToast('⚠️ O salvamento local falhou nesta tentativa.');
     }
-    
-    // Backup Automático
-    createAutoBackup();
 
     if (!silent) {
       if (cloudSyncFailed && useSupabase()) {
@@ -50320,15 +50345,63 @@ window.addEventListener('appinstalled', () => {
   showToast('🎉 App instalado com sucesso!');
 });
 
+function flushSaveOnAppBackground(reason = 'background') {
+  if (!isLoggedIn || !gameState) return;
+  try {
+    persistGameStateLocalFast({ silent: true, includeBackup: true, reason });
+  } catch (e) {
+    console.warn(`Falha ao persistir local ao sair (${reason}):`, e);
+  }
+  try {
+    saveGame(true);
+  } catch (e) {
+    console.warn(`Falha ao sincronizar ao sair (${reason}):`, e);
+  }
+}
+
 // Salvar ao sair/ocultar (Garante contagem de tempo correta em segundo plano)
 window.addEventListener('beforeunload', () => {
-  if (isLoggedIn && gameState) saveGame(true);
+  flushSaveOnAppBackground('beforeunload');
+});
+
+window.addEventListener('pagehide', () => {
+  flushSaveOnAppBackground('pagehide');
+});
+
+document.addEventListener('pause', () => {
+  flushSaveOnAppBackground('pause');
+}, true);
+
+document.addEventListener('freeze', () => {
+  flushSaveOnAppBackground('freeze');
+}, true);
+
+(() => {
+  try {
+    if (!isNativeCapacitorPlatform()) return;
+    const appPlugin = window.Capacitor?.Plugins?.App;
+    if (!appPlugin || typeof appPlugin.addListener !== 'function') return;
+    if (window.__urAppStateSaveBound) return;
+    window.__urAppStateSaveBound = true;
+    appPlugin.addListener('appStateChange', (state) => {
+      try {
+        if (state && state.isActive === false) {
+          flushSaveOnAppBackground('appStateChange');
+        }
+      } catch (e) {}
+    });
+  } catch (e) {
+    console.warn('Falha ao registrar listener nativo de estado do app:', e);
+  }
+})();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    flushSaveOnAppBackground('visibility-hidden');
+  }
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && isLoggedIn && gameState) {
-    saveGame(true);
-  }
   if (document.visibilityState === 'hidden') {
     pausePlayerRoomMusic();
     pauseArenaMusic();

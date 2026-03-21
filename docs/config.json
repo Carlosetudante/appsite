@@ -1,13 +1,13 @@
-{
-  "appName": "Universo Real",
-  "subtitle": "Baixe a versao mais recente do aplicativo.",
-  "version": "2026.03.18",
-  "releaseDate": "2026-03-18",
-  "apkUrl": "./downloads/universo-real-latest.apk",
-  "apkFilename": "universo-real-latest.apk",
-  "whatsNew": [
-    "Ajustes de sincronizacao do ranking entre PC e telefone",
-    "Correcao de pontos zerados no ranking",
-    "Melhorias de estabilidade"
-  ]
+﻿{
+    "appName":  "Universo Real",
+    "subtitle":  "Baixe a versao mais recente do aplicativo.",
+    "version":  "2026.03.21",
+    "releaseDate":  "2026-03-21",
+    "apkUrl":  "./downloads/universo-real-latest.apk",
+    "apkFilename":  "universo-real-latest.apk",
+    "whatsNew":  [
+                     "Correcao de salvamento ao sair do app (segundo plano/fechamento)",
+                     "Jornal: limite de video ampliado para 80 MB",
+                     "Ajustes gerais de estabilidade no Android"
+                 ]
 }
