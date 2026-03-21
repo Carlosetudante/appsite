@@ -2811,7 +2811,7 @@ const PLAYER_ROOM_ADMIN_NEWS_MEDIA_URL_MAX_LEN = 2048;
 const PLAYER_ROOM_MAX_MEDIA_BYTES = 850 * 1024;
 const PLAYER_ROOM_MAX_VIDEO_BYTES = 2 * 1024 * 1024;
 const PLAYER_ROOM_ADMIN_NEWS_IMAGE_FILE_MAX_BYTES = PLAYER_ROOM_MAX_MEDIA_BYTES;
-const PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES = PLAYER_ROOM_MAX_VIDEO_BYTES;
+const PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES = 8 * 1024 * 1024;
 const PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_IMAGE_MAX_LEN = Math.floor((PLAYER_ROOM_ADMIN_NEWS_IMAGE_FILE_MAX_BYTES * 4) / 3) + 4096;
 const PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_VIDEO_MAX_LEN = Math.floor((PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES * 4) / 3) + 4096;
 const PLAYER_ROOM_MAX_AUDIO_MS = 25000;
@@ -4790,6 +4790,10 @@ async function handleAdminNewsVideoFileSelection(file) {
 
   const sizeBytes = Math.max(0, Number(file.size) || 0);
   if (sizeBytes > PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES) {
+    setAdminNewsComposerStatus(
+      `Vídeo muito grande. Limite: ${playerRoomFormatBytes(PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES)}.`,
+      true
+    );
     showToast(`⚠️ Vídeo muito grande (${playerRoomFormatBytes(sizeBytes)}). Limite: ${playerRoomFormatBytes(PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES)}.`);
     return false;
   }
@@ -4797,9 +4801,21 @@ async function handleAdminNewsVideoFileSelection(file) {
   setAdminNewsComposerStatus('Processando vídeo...');
   try {
     const rawDataUrl = await readFileAsDataUrl(file);
+    if (!String(rawDataUrl || '').toLowerCase().startsWith('data:video/')) {
+      setAdminNewsComposerStatus('Arquivo selecionado não parece ser um vídeo válido.', true);
+      showToast('⚠️ Esse arquivo não foi reconhecido como vídeo.');
+      return false;
+    }
     const safeDataUrl = sanitizeAdminNewsMediaValue(rawDataUrl, 'video');
     if (!safeDataUrl) {
-      setAdminNewsComposerStatus('Não consegui usar esse vídeo.', true);
+      if (rawDataUrl.length > PLAYER_ROOM_ADMIN_NEWS_MEDIA_DATA_VIDEO_MAX_LEN) {
+        setAdminNewsComposerStatus(
+          `Vídeo excede o limite do Jornal (${playerRoomFormatBytes(PLAYER_ROOM_ADMIN_NEWS_VIDEO_FILE_MAX_BYTES)}).`,
+          true
+        );
+      } else {
+        setAdminNewsComposerStatus('Não consegui usar esse vídeo.', true);
+      }
       showToast('⚠️ Não consegui usar esse arquivo de vídeo.');
       return false;
     }
@@ -22666,6 +22682,7 @@ async function sendAdminNewsFromAdminPanel() {
   const text = sanitizeAdminNewsText(elements.adminNewsInput?.value || '');
   const imageUrl = sanitizeAdminNewsMediaValue(elements.adminNewsImageUrlInput?.value || '', 'image');
   const rawVideoInput = String(elements.adminNewsVideoUrlInput?.value || '').trim();
+  const hadFileVideoSelected = !!String(adminNewsComposerVideoDataUrl || '').trim();
   const fileVideoUrl = sanitizeAdminNewsMediaValue(adminNewsComposerVideoDataUrl, 'video');
   const editingId = String(adminNewsEditingId || '').trim();
   if (rawVideoInput && fileVideoUrl) {
@@ -22676,6 +22693,16 @@ async function sendAdminNewsFromAdminPanel() {
   const youtubeUrl = sanitizeAdminNewsMediaValue(rawVideoInput, 'youtube');
   const typedVideoUrl = youtubeUrl ? '' : sanitizeAdminNewsMediaValue(rawVideoInput, 'video');
   const videoUrl = typedVideoUrl || fileVideoUrl;
+  if (rawVideoInput && !youtubeUrl && !typedVideoUrl) {
+    setAdminNewsComposerStatus('Link de vídeo inválido. Use URL direta (.mp4/.webm) ou link do YouTube.', true);
+    showToast('⚠️ Link de vídeo inválido.');
+    return;
+  }
+  if (hadFileVideoSelected && !fileVideoUrl) {
+    setAdminNewsComposerStatus('Vídeo selecionado inválido ou acima do limite para notícia.', true);
+    showToast('⚠️ O vídeo selecionado não pôde ser usado.');
+    return;
+  }
 
   if (imageUrl && (youtubeUrl || videoUrl)) {
     setAdminNewsComposerStatus('Use apenas uma mídia: foto OU vídeo.', true);

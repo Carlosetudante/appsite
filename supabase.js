@@ -1630,7 +1630,7 @@ async function sendPlayerChatMessage(channel, payload = {}) {
   const sanitizeAdminNewsMediaUrl = (value, mediaKind) => {
     const MAX_URL_LEN = 2048;
     const IMAGE_DATA_MAX_LEN = Math.floor((850 * 1024 * 4) / 3) + 4096;
-    const VIDEO_DATA_MAX_LEN = Math.floor((2 * 1024 * 1024 * 4) / 3) + 4096;
+    const VIDEO_DATA_MAX_LEN = Math.floor((8 * 1024 * 1024 * 4) / 3) + 4096;
     const kindSafe = normalizeAdminNewsMediaKind(mediaKind);
     if (!kindSafe) return '';
     const raw = String(value || '').trim();
