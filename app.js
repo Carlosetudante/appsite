@@ -1565,10 +1565,45 @@ function getNofapMotivationPhrase(days = 0, hasCounter = false) {
   return `Dia ${safeDays}: ${line}`;
 }
 
+function parseRelationshipStartDate(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const localDayOnly = parseIsoLocalDate(raw);
+  if (localDayOnly instanceof Date && Number.isFinite(localDayOnly.getTime())) {
+    return localDayOnly;
+  }
+
+  const localDateTimeMatch = raw.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+  if (localDateTimeMatch) {
+    const year = Number(localDateTimeMatch[1]);
+    const month = Number(localDateTimeMatch[2]);
+    const day = Number(localDateTimeMatch[3]);
+    const hour = Number(localDateTimeMatch[4]);
+    const minute = Number(localDateTimeMatch[5]);
+    const second = Number(localDateTimeMatch[6] || 0);
+    const parsedLocal = new Date(year, month - 1, day, hour, minute, second, 0);
+    const valid = (
+      parsedLocal.getFullYear() === year &&
+      (parsedLocal.getMonth() + 1) === month &&
+      parsedLocal.getDate() === day &&
+      parsedLocal.getHours() === hour &&
+      parsedLocal.getMinutes() === minute
+    );
+    if (valid && Number.isFinite(parsedLocal.getTime())) {
+      return parsedLocal;
+    }
+  }
+
+  const fallback = new Date(raw);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
 function getRelationshipStartDateForAchievements(state = gameState) {
   if (!state || !state.relationshipStart) return null;
-  const start = new Date(state.relationshipStart);
-  return Number.isNaN(start.getTime()) ? null : start;
+  return parseRelationshipStartDate(state.relationshipStart);
 }
 
 function getRelationshipFullYears(state = gameState) {
@@ -1586,7 +1621,7 @@ function hasRelationshipStarted(state = gameState) {
   const safe = state && typeof state === 'object' ? state : {};
   const raw = String(safe.relationshipStart || '').trim();
   if (!raw) return false;
-  return Number.isFinite(Date.parse(raw));
+  return !!parseRelationshipStartDate(raw);
 }
 
 function hasRelationshipTrophy(state = gameState) {
@@ -1937,6 +1972,7 @@ const DEFAULT_ZEN_MUSIC = 'https://cdn.pixabay.com/download/audio/2022/05/27/aud
 const APP_SHARE_URL_STORAGE_KEY = 'ur_app_share_url_v1';
 const APP_UPDATE_URL_STORAGE_KEY = 'ur_app_update_url_v1';
 const APP_INTRO_SEEN_KEY = 'ur_app_intro_seen_v1';
+const APP_INTERACTIVE_GUIDE_SEEN_KEY = 'ur_app_interactive_guide_seen_v1';
 const APP_INTRO_STEPS = Object.freeze([
   {
     title: 'Bem-vindo ao Universo Real',
@@ -1975,6 +2011,186 @@ const APP_INTRO_STEPS = Object.freeze([
     ]
   }
 ]);
+const APP_INTERACTIVE_GUIDE_STEPS = Object.freeze([
+  {
+    key: 'hero_tab',
+    title: 'Início (Herói)',
+    description: 'Clique no botão de Início/Herói para abrir a visão geral do seu progresso.',
+    selectors: ['#mobile-nav .nav-btn[data-view="home"]', '.tab-btn[data-tab="hero"]', '.mobile-drawer-item.tab-btn[data-tab="hero"]'],
+    requireClick: true
+  },
+  {
+    key: 'assistant_tab',
+    title: 'Assistente',
+    description: 'Clique no Assistente (barra inferior) para abrir o chat. Assim que abrir, o guia avança sozinho para o teste dos recursos.',
+    selectors: ['#mobile-nav .nav-btn[data-view="oraculo"]', '#chatBtn'],
+    helperActionKey: 'open_assistant',
+    autoAdvanceOnClick: true,
+    allowAnySelectorClick: true,
+    preferCardTop: true,
+    requireClick: true
+  },
+  {
+    key: 'assistant_resources',
+    title: 'Assistente • Recursos',
+    description: 'Com o Assistente aberto, toque em um botão de recurso (Perguntar, Lembrar, Memórias, Ler PDF, Guia ou cards) para continuar.',
+    selectors: ['#chatModal #oracleQuickActions button', '#chatModal .oracle-quick-btn', '#chatModal .oracle-capability-card', '#chatModal #oracleCapabilityCards'],
+    ensureAssistantNavActive: true,
+    ensureOracleOpen: true,
+    ensureAssistantResourcesVisible: true,
+    helperActionKey: 'show_assistant_resources',
+    allowAnySelectorClick: true,
+    preferCardTop: true,
+    noTargetHighlight: true,
+    forceTargetVisible: true,
+    requireClick: true
+  },
+  {
+    key: 'tasks_tab',
+    title: 'Aba de Tarefas',
+    description: 'Clique em Tarefas/Missões para acessar sua lista diária.',
+    selectors: ['#mobile-nav .nav-btn[data-view="tarefas"]', '.tab-btn[data-tab="quests"]', '.mobile-drawer-item.tab-btn[data-tab="quests"]'],
+    requireClick: true
+  },
+  {
+    key: 'tasks_add',
+    title: 'Tarefas • Teste rápido',
+    description: 'Agora clique em "Adicionar" para praticar a criação de missão.',
+    selectors: ['#addTaskBtn'],
+    openTab: 'quests',
+    requireClick: true
+  },
+  {
+    key: 'finance_tab',
+    title: 'Aba Finanças',
+    description: 'Clique em Finanças para abrir o painel financeiro.',
+    selectors: ['.tab-btn[data-tab="finance"]', '.mobile-drawer-item.tab-btn[data-tab="finance"]'],
+    helperActionKey: 'open_finance_tab',
+    preferCardTop: true,
+    requireClick: true
+  },
+  {
+    key: 'finance_add',
+    title: 'Finanças • Teste rápido',
+    description: 'Clique no botão "+" para testar inclusão de lançamento.',
+    selectors: ['#addFinanceBtn'],
+    openTab: 'finance',
+    requireClick: true
+  },
+  {
+    key: 'work_tab',
+    title: 'Aba Trabalho',
+    description: 'Clique em Trabalho para entrar no controle de jornada.',
+    selectors: ['.tab-btn[data-tab="dom"]', '.mobile-drawer-item.tab-btn[data-tab="dom"]'],
+    helperActionKey: 'open_work_tab',
+    preferCardTop: true,
+    requireClick: true
+  },
+  {
+    key: 'work_start',
+    title: 'Trabalho • Cronômetro',
+    description: 'Clique em "INICIAR" para testar o início da jornada.',
+    selectors: ['#startWorkBtn'],
+    openTab: 'dom',
+    requireClick: true
+  },
+  {
+    key: 'room_tab',
+    title: 'Sala',
+    description: 'Clique em Sala para abrir o chat em tempo real.',
+    selectors: ['#mobile-nav .nav-btn[data-view="sala"]', '.tab-btn[data-tab="room"]', '.mobile-drawer-item.tab-btn[data-tab="room"]'],
+    requireClick: true
+  },
+  {
+    key: 'room_send',
+    title: 'Sala • Envio',
+    description: 'Clique na seta de envio para treinar mensagem na sala.',
+    selectors: ['#playerRoomSendBtn', '#playerRoomInput'],
+    openTab: 'room',
+    requireClick: true
+  },
+  {
+    key: 'poker_tab',
+    title: 'Poker',
+    description: 'Vamos abrir o Poker automaticamente neste passo para você continuar sem travar.',
+    selectors: ['#tab-arena', '.mobile-drawer-item.tab-btn[data-tab="arena"]', '.tab-btn[data-tab="arena"]'],
+    openTab: 'arena',
+    helperActionKey: 'open_poker_tab',
+    ensureDrawerOpen: true,
+    preferCardTop: true,
+    requireClick: true
+  },
+  {
+    key: 'poker_new_round',
+    title: 'Poker • Nova rodada',
+    description: 'Clique em "Nova Rodada" para testar o fluxo de jogo.',
+    selectors: ['#pokerNewHandBtn'],
+    openTab: 'arena',
+    requireClick: true
+  },
+  {
+    key: 'bible_tab',
+    title: 'Bíblia',
+    description: 'Clique em Bíblia para abrir leitura e anotações.',
+    selectors: ['#mobile-nav .nav-btn[data-view="bible"]', '.tab-btn[data-tab="bible"]', '.mobile-drawer-item.tab-btn[data-tab="bible"]'],
+    requireClick: true
+  },
+  {
+    key: 'bible_screen',
+    title: 'Bíblia • Área de leitura',
+    description: 'Clique na área de leitura para validar que a seção abriu.',
+    selectors: ['#tab-bible', '.bible-layout', '.bible-reader-shell'],
+    openTab: 'bible',
+    requireClick: true
+  },
+  {
+    key: 'ia_tab',
+    title: 'IA',
+    description: 'Vamos abrir a aba IA automaticamente para facilitar este passo.',
+    selectors: ['.tab-btn[data-tab="ia"]', '.mobile-drawer-item.tab-btn[data-tab="ia"]'],
+    openTab: 'ia',
+    helperActionKey: 'open_ia_tab',
+    ensureDrawerOpen: true,
+    preferCardTop: true,
+    requireClick: true
+  },
+  {
+    key: 'shop_tab',
+    title: 'Loja',
+    description: 'Vamos abrir a Loja automaticamente para facilitar este passo.',
+    selectors: ['.tab-btn[data-tab="shop"]', '.mobile-drawer-item.tab-btn[data-tab="shop"]'],
+    openTab: 'shop',
+    helperActionKey: 'open_shop_tab',
+    ensureDrawerOpen: true,
+    preferCardTop: true,
+    requireClick: true
+  },
+  {
+    key: 'mobile_more',
+    title: 'Mais recursos (Celular)',
+    description: 'No celular, clique em "Mais" para abrir ferramentas extras.',
+    selectors: ['#mobileNavMoreBtn'],
+    helperActionKey: 'open_more_menu',
+    mobileOnly: true,
+    requireClick: true
+  },
+  {
+    key: 'mobile_drawer_tools',
+    title: 'Ferramentas extras',
+    description: 'Com o menu "Mais" aberto, clique em Cinema, NoFap ou Ponto para testar.',
+    selectors: ['#drawerCinemaBtn', '#drawerNofapBtn', '#drawerPontoBtn'],
+    mobileOnly: true,
+    ensureDrawerOpen: true,
+    requireClick: true
+  },
+  {
+    key: 'guide_done',
+    title: 'Guia concluído',
+    description: 'Pronto. Você já testou os principais recursos e salas do app.',
+    selectors: [],
+    requireClick: false
+  }
+]);
 
 // Playlist Zen
 let zenPlaylist = [];
@@ -1989,6 +2205,9 @@ let isLoggedIn = false;
 let loginTime = null;
 let appIntroStepIndex = 0;
 let appIntroPromptedKey = '';
+let appInteractiveGuideState = null;
+let appInteractiveGuideUi = null;
+let appInteractiveGuideAssistantMessageKey = '';
 let cinemaApiLastResults = [];
 const tmdbProviderLinkCache = new Map();
 let financeFilter = 'all';
@@ -1998,12 +2217,18 @@ let canRunFullCloudSync = false;
 let currentAuthUserId = '';
 const ADMIN_PANEL_MAX_USERS = 300;
 const ADMIN_PANEL_MAX_COINS = 999999999;
+const ADMIN_KNOWLEDGE_MAX_ENTRIES = 1200;
 const adminPanelState = {
   loading: false,
   source: 'local',
   selectedId: '',
   rows: [],
   hiddenProfileIds: new Set()
+};
+const adminKnowledgeState = {
+  loading: false,
+  selectedId: '',
+  entries: []
 };
 let adminNewsComposerVideoDataUrl = '';
 let adminNewsComposerVideoName = '';
@@ -2017,15 +2242,17 @@ const ADMIN_HIDDEN_RANK_STORAGE_KEY = 'ur_admin_hidden_rank_ids_v1';
 const PLAYER_ROOM_STORAGE_KEY = 'ur_player_room_history_v1';
 const PLAYER_ROOM_INPUT_DRAFT_STORAGE_KEY = 'ur_player_room_input_draft_v1';
 const ADMIN_NEWS_COMPOSER_DRAFT_STORAGE_KEY = 'ur_admin_news_composer_draft_v1';
+const ORACLE_CHAT_INPUT_DRAFT_STORAGE_KEY = 'ur_oracle_chat_input_draft_v1';
 const PLAYER_ROOM_THEME_STORAGE_KEY = 'ur_player_room_theme_v2';
 const PLAYER_ROOM_MUSIC_STORAGE_KEY = 'ur_player_room_music_v1';
 const ARENA_MUSIC_STORAGE_KEY = 'ur_arena_music_v1';
 const PLAYER_ROOM_MAX_MESSAGES = 120;
 const PLAYER_ROOM_MAX_TEXT_LENGTH = 500;
 const PLAYER_ROOM_THEMES = Object.freeze(['medieval']);
-const PLAYER_ROOM_DEFAULT_MUSIC = './player-room-medieval-celtic.mp3';
+const PLAYER_ROOM_DEFAULT_MUSIC = 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Barcarolle_-_Offenbach.ogg';
 const ARENA_DEFAULT_MUSIC = './saladepoker.mp3';
 const PLAYER_ROOM_MUSIC_SOURCES = Object.freeze([
+  'https://upload.wikimedia.org/wikipedia/commons/f/f0/Barcarolle_-_Offenbach.ogg',
   './player-room-medieval-celtic.mp3',
   './nofap-motivacao.mp4',
   DEFAULT_ZEN_MUSIC
@@ -2835,6 +3062,108 @@ const PLAYER_ROOM_BLESS_ACCEPT_ACTION = 'bless_accept';
 const PLAYER_ROOM_BLESS_EVENT_TITLE = 'Forca, guerreiro';
 const PLAYER_ROOM_BLESS_EVENT_MESSAGE = 'Forca, guerreiro! Deus te abencoe e te fortaleca.';
 const PLAYER_ROOM_BLESS_EVENT_ICON = '🛡️';
+const KNOWLEDGE_NETWORK_ROOM = 'global';
+const KNOWLEDGE_NETWORK_STORAGE_KEY = 'ur_knowledge_network_entries_v1';
+const KNOWLEDGE_NETWORK_AUTO_SYNC_KEY = 'ur_knowledge_auto_sync_v1';
+const KNOWLEDGE_NETWORK_MAX_ENTRIES = 220;
+const KNOWLEDGE_NETWORK_MAX_TEXT_LENGTH = 360;
+const KNOWLEDGE_NETWORK_MAX_TAGS = 8;
+const KNOWLEDGE_NETWORK_AUTO_QUEUE_MAX = 80;
+const ASSISTANT_KNOWLEDGE_CACHE_KEY = 'ur_assistant_knowledge_cache_v1';
+const ASSISTANT_KNOWLEDGE_CACHE_MAX_ITEMS = 1400;
+const ASSISTANT_KNOWLEDGE_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 12;
+const DEFAULT_FINANCE_SALARY_RULE_PARTS = Object.freeze([30, 30, 40]);
+
+function normalizeFinanceSalaryRuleParts(parts, fallback = DEFAULT_FINANCE_SALARY_RULE_PARTS) {
+  const source = Array.isArray(parts) ? parts : fallback;
+  const raw = source.map((value) => Math.max(0, Number(value) || 0)).slice(0, 3);
+  while (raw.length < 3) raw.push(0);
+  const total = raw.reduce((sum, value) => sum + value, 0);
+  if (!(total > 0)) return [...fallback];
+
+  const scaled = raw.map((value) => Math.max(0, Math.round((value / total) * 100)));
+  let diff = 100 - scaled.reduce((sum, value) => sum + value, 0);
+  if (diff !== 0) {
+    let index = scaled.indexOf(Math.max(...scaled));
+    if (index < 0) index = 0;
+    scaled[index] = Math.max(0, scaled[index] + diff);
+  }
+  return scaled;
+}
+
+function normalizeFinanceSalaryRuleState(raw = null) {
+  const safe = raw && typeof raw === 'object' ? raw : {};
+  let parts = Array.isArray(safe.parts) ? safe.parts : null;
+  if (!parts && Number.isFinite(Number(safe.needs)) && Number.isFinite(Number(safe.lifestyle)) && Number.isFinite(Number(safe.future))) {
+    parts = [safe.needs, safe.lifestyle, safe.future];
+  }
+  const normalizedParts = normalizeFinanceSalaryRuleParts(parts, DEFAULT_FINANCE_SALARY_RULE_PARTS);
+  const updatedAtRaw = String(safe.updatedAt || '').trim();
+  const updatedAt = Number.isFinite(Date.parse(updatedAtRaw)) ? new Date(updatedAtRaw).toISOString() : null;
+  const source = String(safe.source || '').trim().slice(0, 40) || 'default';
+  return {
+    parts: normalizedParts,
+    needs: normalizedParts[0],
+    lifestyle: normalizedParts[1],
+    future: normalizedParts[2],
+    source,
+    updatedAt
+  };
+}
+
+function parseFinanceSalaryRuleFromText(text = '') {
+  const safe = String(text || '')
+    .toLowerCase()
+    .replace(/%/g, '')
+    .replace(/,/g, '.')
+    .trim();
+  if (!safe) return null;
+
+  const compact = safe.replace(/[^\d/:\-\s|]/g, ' ');
+  const slashLikeMatch = compact.match(/(\d{1,3})\s*(?:\/|:|\-|\\|\||\s)\s*(\d{1,3})\s*(?:\/|:|\-|\\|\||\s)\s*(\d{1,3})/);
+  if (!slashLikeMatch) return null;
+
+  const a = Number(slashLikeMatch[1]);
+  const b = Number(slashLikeMatch[2]);
+  const c = Number(slashLikeMatch[3]);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) return null;
+  if (a < 0 || b < 0 || c < 0) return null;
+  if (a > 1000 || b > 1000 || c > 1000) return null;
+
+  const total = a + b + c;
+  if (!(total > 0)) return null;
+
+  return {
+    raw: [a, b, c],
+    normalized: normalizeFinanceSalaryRuleParts([a, b, c]),
+    total
+  };
+}
+
+function formatFinanceSalaryRuleParts(parts = DEFAULT_FINANCE_SALARY_RULE_PARTS) {
+  const normalized = normalizeFinanceSalaryRuleParts(parts, DEFAULT_FINANCE_SALARY_RULE_PARTS);
+  return `${normalized[0]}/${normalized[1]}/${normalized[2]}`;
+}
+
+function getSavedFinanceSalaryRuleParts(state = null) {
+  const source = state && typeof state === 'object' ? state : gameState;
+  const normalized = normalizeFinanceSalaryRuleState(source?.financeSalaryRule || null);
+  return normalized.parts;
+}
+
+function saveFinanceSalaryRuleState(parts = DEFAULT_FINANCE_SALARY_RULE_PARTS, source = 'manual') {
+  if (!gameState || typeof gameState !== 'object') return null;
+  const normalizedState = normalizeFinanceSalaryRuleState({
+    parts,
+    source,
+    updatedAt: new Date().toISOString()
+  });
+  gameState.financeSalaryRule = normalizedState;
+  try {
+    if (typeof saveGame === 'function') saveGame(true);
+  } catch (e) {}
+  return normalizedState;
+}
 let playerRoomChannel = null;
 let playerRoomConnected = false;
 let playerRoomInitialized = false;
@@ -2876,6 +3205,16 @@ let playerRoomBlessLastSentAt = 0;
 let playerRoomBlessAcceptedEventIds = new Set();
 let playerRoomBlessOutboxProcessing = false;
 let playerRoomBlessOutboxLastProcessAt = 0;
+let knowledgeNetworkChannel = null;
+let knowledgeNetworkConnected = false;
+let knowledgeNetworkJoinPromise = null;
+let knowledgeNetworkReconnectTimer = null;
+let knowledgeNetworkReconnectAttempt = 0;
+let knowledgeNetworkEntries = [];
+let knowledgeNetworkEntriesLoaded = false;
+let knowledgeNetworkAutoShareQueue = [];
+let knowledgeNetworkAutoShareBusy = false;
+let knowledgeNetworkAutoShareRecentKeys = new Set();
 let arenaChannel = null;
 let arenaConnected = false;
 let arenaInitialized = false;
@@ -3561,6 +3900,7 @@ const elements = {
   globalHelpFab: document.getElementById('globalHelpFab'),
   globalHelpModal: document.getElementById('globalHelpModal'),
   globalHelpCloseBtn: document.getElementById('globalHelpCloseBtn'),
+  globalHelpStartInteractiveGuideBtn: document.getElementById('globalHelpStartInteractiveGuideBtn'),
   globalHelpReplayIntroTopBtn: document.getElementById('globalHelpReplayIntroTopBtn'),
   globalHelpReplayIntroBtn: document.getElementById('globalHelpReplayIntroBtn'),
   appIntroModal: document.getElementById('appIntroModal'),
@@ -3568,6 +3908,7 @@ const elements = {
   appIntroTitle: document.getElementById('appIntroTitle'),
   appIntroDescription: document.getElementById('appIntroDescription'),
   appIntroPoints: document.getElementById('appIntroPoints'),
+  appIntroStartInteractiveGuideBtn: document.getElementById('appIntroStartInteractiveGuideBtn'),
   appIntroSkipBtn: document.getElementById('appIntroSkipBtn'),
   appIntroPrevBtn: document.getElementById('appIntroPrevBtn'),
   appIntroNextBtn: document.getElementById('appIntroNextBtn'),
@@ -3689,6 +4030,21 @@ const elements = {
   adminMaintenanceEnableBtn: document.getElementById('adminMaintenanceEnableBtn'),
   adminMaintenanceDisableBtn: document.getElementById('adminMaintenanceDisableBtn'),
   adminMaintenanceStatus: document.getElementById('adminMaintenanceStatus'),
+  adminKnowledgeSearchInput: document.getElementById('adminKnowledgeSearchInput'),
+  adminKnowledgeReloadBtn: document.getElementById('adminKnowledgeReloadBtn'),
+  adminKnowledgeList: document.getElementById('adminKnowledgeList'),
+  adminKnowledgeEditor: document.getElementById('adminKnowledgeEditor'),
+  adminKnowledgeTargetLabel: document.getElementById('adminKnowledgeTargetLabel'),
+  adminKnowledgeTitleInput: document.getElementById('adminKnowledgeTitleInput'),
+  adminKnowledgePriorityInput: document.getElementById('adminKnowledgePriorityInput'),
+  adminKnowledgeContentInput: document.getElementById('adminKnowledgeContentInput'),
+  adminKnowledgeTagsInput: document.getElementById('adminKnowledgeTagsInput'),
+  adminKnowledgeKeywordsInput: document.getElementById('adminKnowledgeKeywordsInput'),
+  adminKnowledgeActiveInput: document.getElementById('adminKnowledgeActiveInput'),
+  adminKnowledgeStatus: document.getElementById('adminKnowledgeStatus'),
+  adminKnowledgeSaveBtn: document.getElementById('adminKnowledgeSaveBtn'),
+  adminKnowledgeDeleteBtn: document.getElementById('adminKnowledgeDeleteBtn'),
+  adminKnowledgeNewBtn: document.getElementById('adminKnowledgeNewBtn'),
   watchTemplateList: document.getElementById('watchTemplateList'),
   watchTemplatePreviewConnection: document.getElementById('watchTemplatePreviewConnection'),
   watchTemplatePreviewLayout: document.getElementById('watchTemplatePreviewLayout'),
@@ -5550,6 +5906,10 @@ function sanitizeArenaProfile(entry = {}, fallback = {}) {
   const safeTrophiesCount = Math.max(0, Number(source.trophiesCount ?? source.trophies_count ?? base.trophiesCount ?? base.trophies_count ?? 0) || 0);
   const safeStreak = Math.max(0, Number(source.streak ?? base.streak ?? 0) || 0);
   const safeCoins = Math.max(0, Number(source.coins ?? base.coins ?? 0) || 0);
+  const safePokerChips = normalizePokerChipValue(
+    source.pokerChips ?? source.poker_chips ?? base.pokerChips ?? base.poker_chips ?? 0,
+    0
+  );
   const safeUsername = String(source.username || base.username || source.name || base.name || '').trim().slice(0, 60);
   const explicitAdmin = source.isAdmin === true || base.isAdmin === true;
   const inferredAdmin = explicitAdmin || [source.userId, source.username, source.name, source.title, source.rankLabel, base.userId, base.username, base.name]
@@ -5583,6 +5943,7 @@ function sanitizeArenaProfile(entry = {}, fallback = {}) {
     trophiesCount: safeTrophiesCount,
     streak: safeStreak,
     coins: safeCoins,
+    pokerChips: safePokerChips,
     isRankAuthoritative: safeIsRankAuthoritative,
     rankingScore: safeRankingScore,
     stats,
@@ -5594,6 +5955,7 @@ function buildArenaProfilePayload(sourceState = gameState) {
   const level = Math.max(1, Number(sourceState?.level || 1) || 1);
   const rankInfo = typeof getHeroRankInfo === 'function' ? getHeroRankInfo(level) : { label: 'Recruta' };
   const powerInfo = typeof getHeroPowerInfo === 'function' ? getHeroPowerInfo(sourceState) : { score: 0 };
+  const pokerProfile = sourceState?.poker && typeof sourceState.poker === 'object' ? sourceState.poker : {};
   return sanitizeArenaProfile({
     userId: getPlayerRoomCurrentUserId(),
     username: String(sourceState?.username || sourceState?.name || '').trim().slice(0, 60),
@@ -5607,6 +5969,7 @@ function buildArenaProfilePayload(sourceState = gameState) {
     trophiesCount: Array.isArray(sourceState?.trophies) ? sourceState.trophies.length : 0,
     streak: Math.max(0, Number(sourceState?.streak || 0) || 0),
     coins: Math.max(0, Number(sourceState?.coins || 0) || 0),
+    pokerChips: normalizePokerChipValue(pokerProfile.playerChips, POKER_PLAYER_START_CHIPS),
     stats: buildArenaStats(sourceState),
     updatedAt: new Date().toISOString()
   });
@@ -9360,10 +9723,12 @@ function collectPokerOnlineLobbyParticipants({ includeSelf = true, excludeUserId
   const myUserId = String(getPokerCurrentUserId() || '').trim();
 
   if (includeSelf && myUserId && !excluded.has(myUserId)) {
+    const ps = ensurePokerState();
     const selfProfileRaw = {
       ...getArenaSelfProfile(),
       userId: myUserId,
-      coins: Math.max(0, Number(gameState?.coins || 0) || 0)
+      coins: Math.max(0, Number(gameState?.coins || 0) || 0),
+      pokerChips: normalizePokerChipValue(ps?.playerChips, POKER_PLAYER_START_CHIPS)
     };
     const selfProfile = sanitizeArenaProfile(selfProfileRaw, selfProfileRaw);
     out.push(selfProfile);
@@ -9383,7 +9748,8 @@ function collectPokerOnlineLobbyParticipants({ includeSelf = true, excludeUserId
     if (excluded.has(userId) || seen.has(userId)) continue;
     out.push({
       ...safe,
-      coins: Math.max(0, Number(safe.coins || 0) || 0)
+      coins: Math.max(0, Number(safe.coins || 0) || 0),
+      pokerChips: normalizePokerChipValue(safe.pokerChips, 0)
     });
     seen.add(userId);
   }
@@ -9454,22 +9820,15 @@ async function challengePokerOnlinePlayer(targetUserId = '') {
     showToast('⚠️ Faça login para jogar Pôquer on-line.');
     return false;
   }
-  const myCoins = Math.max(0, Number(gameState?.coins || 0) || 0);
-  if (myCoins < 20) {
-    showToast('⚠️ Você precisa de pelo menos 20 moedas para jogar Poker online.');
+  const ps = ensurePokerState();
+  const myChips = normalizePokerChipValue(ps?.playerChips, POKER_PLAYER_START_CHIPS);
+  if (myChips < 20) {
+    showToast('⚠️ Você precisa de pelo menos 20 fichas para jogar Poker online.');
     return false;
   }
   const target = getArenaPlayerById(targetUserId);
   if (!target) {
     showToast('⚠️ Jogador não encontrado.');
-    return false;
-  }
-  if (!Number.isFinite(Number(target?.coins))) {
-    target.coins = 20;
-  }
-  const targetCoins = Math.max(0, Number(target?.coins || 0) || 0);
-  if (targetCoins < 20) {
-    showToast('⚠️ Esse jogador não tem moedas suficientes para a mesa online.');
     return false;
   }
   if (pokerOnlineMatch && pokerOnlineMatch.status === 'active') {
@@ -9478,7 +9837,7 @@ async function challengePokerOnlinePlayer(targetUserId = '') {
   }
   await ensureArenaConnection({ silent: true });
   const sessionId = `poker-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const selfProfile = { ...getArenaSelfProfile(), coins: myCoins };
+  const selfProfile = { ...getArenaSelfProfile(), pokerChips: myChips };
   await emitArenaEvent({
     type: 'challenge',
     sessionId,
@@ -9709,25 +10068,26 @@ function createPokerOnlineMatchFromParticipants(participants = [], sessionId = '
   if (uniqueProfiles.length < 2) return null;
 
   const myUserId = getPokerCurrentUserId();
+  const ps = ensurePokerState();
   const prepared = uniqueProfiles.map((profile) => {
     const userId = String(profile.userId || '').trim();
-    const rawCoins = Math.max(0, Number(profile.coins ?? 0) || 0);
-    const coins = userId === myUserId
-      ? Math.max(0, Number(gameState?.coins || 0) || 0)
-      : rawCoins;
+    const rawChips = normalizePokerChipValue(profile.pokerChips, 0);
+    const chips = userId === myUserId
+      ? normalizePokerChipValue(ps?.playerChips, POKER_PLAYER_START_CHIPS)
+      : rawChips;
     return {
       profile: {
         ...profile,
         userId,
-        coins
+        pokerChips: chips
       },
       userId,
-      coins
+      chips
     };
   });
 
   const minBlindToJoin = 20;
-  const eligible = prepared.filter((entry) => entry.coins >= minBlindToJoin).slice(0, POKER_ONLINE_MAX_PLAYERS);
+  const eligible = prepared.filter((entry) => entry.chips >= minBlindToJoin).slice(0, POKER_ONLINE_MAX_PLAYERS);
   if (eligible.length < 2) return null;
 
   const players = eligible.map((entry) => entry.userId);
@@ -9744,7 +10104,7 @@ function createPokerOnlineMatchFromParticipants(participants = [], sessionId = '
   const profiles = {};
   players.forEach((userId) => {
     hands[userId] = [sanitizePokerCard(deck.pop()), sanitizePokerCard(deck.pop())].filter(Boolean);
-    chips[userId] = Math.max(0, Number(eligible.find((entry) => entry.userId === userId)?.coins || 0) || 0);
+    chips[userId] = normalizePokerChipValue(eligible.find((entry) => entry.userId === userId)?.chips, 0);
     bets[userId] = 0;
     folded[userId] = false;
     profiles[userId] = eligible.find((entry) => entry.userId === userId)?.profile || { userId, name: 'Jogador', avatar: '🧑' };
@@ -9779,7 +10139,7 @@ function createPokerOnlineMatchFromParticipants(participants = [], sessionId = '
   pokerOnlinePay(match, bigBlindUserId, bigBlind);
   match.currentBet = Math.max(0, Number(match.bets[dealerUserId] || 0), Number(match.bets[bigBlindUserId] || 0));
   match.turnUserId = pokerOnlineGetNextActivePlayer(match, bigBlindUserId, { includeCurrent: false }) || dealerUserId;
-  match.actionText = `Mesa online pronta com ${players.length} jogador(es). Blinds: ${pokerOnlineDisplayName(dealerUserId, match)} ${smallBlind} e ${pokerOnlineDisplayName(bigBlindUserId, match)} ${bigBlind} moedas.`;
+  match.actionText = `Mesa online pronta com ${players.length} jogador(es). Blinds: ${pokerOnlineDisplayName(dealerUserId, match)} ${smallBlind} e ${pokerOnlineDisplayName(bigBlindUserId, match)} ${bigBlind} fichas.`;
   return sanitizePokerOnlineMatch(match);
 }
 
@@ -9807,10 +10167,9 @@ function pokerApplyOnlineResultIfNeeded(match = null) {
   if (!ps) return;
   ps.handsPlayed = Math.max(0, Number(ps.handsPlayed || 0) || 0) + 1;
   const myUserId = getPokerCurrentUserId();
-  const myFinalCoins = Math.max(0, Number(match?.chips?.[myUserId] || 0) || 0);
-  if (myUserId && Number.isFinite(myFinalCoins)) {
-    gameState.coins = myFinalCoins;
-    gameState.wallet = normalizeWalletState(gameState.wallet, gameState.coins);
+  const myFinalChips = normalizePokerChipValue(match?.chips?.[myUserId], ps.playerChips);
+  if (myUserId && Number.isFinite(myFinalChips)) {
+    ps.playerChips = myFinalChips;
   }
   const winner = String(match.winnerUserId || '').trim();
   if (winner) {
@@ -9855,8 +10214,8 @@ async function pokerStartOnlineRematch() {
       match.profiles?.[userId],
       match.profiles?.[userId] || { userId, name: 'Jogador', avatar: '🧑' }
     );
-    const coins = Math.max(0, Number(match.chips?.[userId] || 0) || 0);
-    return { ...baseProfile, userId, coins };
+    const pokerChips = normalizePokerChipValue(match.chips?.[userId], 0);
+    return { ...baseProfile, userId, pokerChips };
   });
 
   const rematch = createPokerOnlineMatch(
@@ -9865,7 +10224,7 @@ async function pokerStartOnlineRematch() {
   );
 
   if (!rematch) {
-    showToast('⚠️ Nova partida indisponível. É preciso pelo menos 2 jogadores com 20 moedas ou mais.');
+    showToast('⚠️ Nova partida indisponível. É preciso pelo menos 2 jogadores com 20 fichas ou mais.');
     return false;
   }
 
@@ -9903,7 +10262,7 @@ async function pokerStartNextHand() {
       `poker-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     );
     if (!newMatch) {
-      showToast('⚠️ Não foi possível iniciar a mesa online. É preciso pelo menos 2 jogadores com 20 moedas.');
+      showToast('⚠️ Não foi possível iniciar a mesa online. É preciso pelo menos 2 jogadores com 20 fichas.');
       return false;
     }
     pokerOnlineMatch = newMatch;
@@ -9918,15 +10277,16 @@ async function pokerStartNextHand() {
 async function acceptPokerOnlineChallenge() {
   if (!pokerOnlineIncomingChallenge) return false;
   await ensureArenaConnection({ silent: true });
-  const myCoins = Math.max(0, Number(gameState?.coins || 0) || 0);
-  if (myCoins < 20) {
-    showToast('⚠️ Você precisa de pelo menos 20 moedas para entrar no Poker online.');
+  const ps = ensurePokerState();
+  const myChips = normalizePokerChipValue(ps?.playerChips, POKER_PLAYER_START_CHIPS);
+  if (myChips < 20) {
+    showToast('⚠️ Você precisa de pelo menos 20 fichas para entrar no Poker online.');
     pokerOnlineIncomingChallenge = null;
     renderArena();
     return false;
   }
   const challenge = pokerOnlineIncomingChallenge;
-  const me = { ...getArenaSelfProfile(), coins: myCoins };
+  const me = { ...getArenaSelfProfile(), pokerChips: myChips };
   const challenger = sanitizeArenaProfile(challenge.profile, challenge.profile);
   const extras = collectPokerOnlineLobbyParticipants({
     includeSelf: false,
@@ -9936,7 +10296,7 @@ async function acceptPokerOnlineChallenge() {
   const participants = [challenger, me, ...extras];
   const match = createPokerOnlineMatch(participants, challenge.sessionId);
   if (!match) {
-    showToast('❌ Não foi possível iniciar a mesa online. É preciso pelo menos 2 jogadores com 20 moedas.');
+    showToast('❌ Não foi possível iniciar a mesa online. É preciso pelo menos 2 jogadores com 20 fichas.');
     return false;
   }
   pokerMode = 'online';
@@ -10507,7 +10867,7 @@ function renderPokerOnlineTablePlayers(match = null, myUserId = getPokerCurrentU
       return `
         <div class="poker-table-player-row ${stateClass}">
           <div class="poker-table-player-name">${profileName}</div>
-          <div class="poker-table-player-meta">Moedas: ${chips.toLocaleString('pt-BR')} • Aposta: ${bet.toLocaleString('pt-BR')} • ${stateText}</div>
+          <div class="poker-table-player-meta">Fichas: ${chips.toLocaleString('pt-BR')} • Aposta: ${bet.toLocaleString('pt-BR')} • ${stateText}</div>
         </div>
       `;
     });
@@ -12232,6 +12592,25 @@ function applyAdminNewsComposerDraftToInputs() {
     elements.adminNewsVideoUrlInput.value = draft.videoUrl || '';
   }
   updateAdminNewsVideoComposerLabel();
+}
+
+function saveOracleChatInputDraft(value = '') {
+  try {
+    const safe = String(value || '').slice(0, 1200);
+    if (!safe.trim()) {
+      localStorage.removeItem(ORACLE_CHAT_INPUT_DRAFT_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(ORACLE_CHAT_INPUT_DRAFT_STORAGE_KEY, safe);
+  } catch (e) {}
+}
+
+function loadOracleChatInputDraft() {
+  try {
+    return String(localStorage.getItem(ORACLE_CHAT_INPUT_DRAFT_STORAGE_KEY) || '').slice(0, 1200);
+  } catch (e) {
+    return '';
+  }
 }
 
 function setPlayerRoomStatus(text, state = 'offline') {
@@ -15013,6 +15392,516 @@ function disconnectPlayerRoom({ resetStatus = true } = {}) {
   }
 }
 
+function normalizeKnowledgeNetworkTagList(tags = []) {
+  const out = [];
+  const seen = new Set();
+  (Array.isArray(tags) ? tags : []).forEach((tag) => {
+    const safe = String(tag || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 24);
+    if (!safe || seen.has(safe)) return;
+    seen.add(safe);
+    out.push(safe);
+  });
+  return out.slice(0, KNOWLEDGE_NETWORK_MAX_TAGS);
+}
+
+function normalizeKnowledgeNetworkCategory(value = 'general') {
+  const safe = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 24);
+  return safe || 'general';
+}
+
+function normalizeKnowledgeNetworkText(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, KNOWLEDGE_NETWORK_MAX_TEXT_LENGTH);
+}
+
+function normalizeKnowledgeNetworkEntry(payload = {}) {
+  const safe = payload && typeof payload === 'object' ? payload : {};
+  const text = normalizeKnowledgeNetworkText(safe.text || safe.fact || '');
+  if (!text) return null;
+
+  const nowIso = new Date().toISOString();
+  const createdRaw = String(safe.createdAt || '').trim();
+  const createdAt = Number.isFinite(Date.parse(createdRaw))
+    ? new Date(createdRaw).toISOString()
+    : nowIso;
+  const id = String(safe.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`).trim().slice(0, 120);
+  const sourceDevice = String(safe.sourceDevice || 'desconhecido')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 24);
+
+  return {
+    id: id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+    category: normalizeKnowledgeNetworkCategory(safe.category || 'general'),
+    tags: normalizeKnowledgeNetworkTagList(safe.tags),
+    sourceDevice: sourceDevice || 'desconhecido',
+    createdAt
+  };
+}
+
+function loadKnowledgeNetworkEntriesFromStorage() {
+  try {
+    const raw = localStorage.getItem(KNOWLEDGE_NETWORK_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(parsed) ? parsed : [];
+    return list
+      .map((item) => normalizeKnowledgeNetworkEntry(item))
+      .filter(Boolean)
+      .slice(-KNOWLEDGE_NETWORK_MAX_ENTRIES);
+  } catch (e) {
+    return [];
+  }
+}
+
+function persistKnowledgeNetworkEntriesToStorage() {
+  try {
+    localStorage.setItem(
+      KNOWLEDGE_NETWORK_STORAGE_KEY,
+      JSON.stringify((knowledgeNetworkEntries || []).slice(-KNOWLEDGE_NETWORK_MAX_ENTRIES))
+    );
+  } catch (e) {}
+}
+
+function ensureKnowledgeNetworkEntriesLoaded() {
+  if (knowledgeNetworkEntriesLoaded) return;
+  knowledgeNetworkEntriesLoaded = true;
+  knowledgeNetworkEntries = loadKnowledgeNetworkEntriesFromStorage();
+}
+
+function normalizeKnowledgeCompareText(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function rememberCommunityKnowledge(entry, { silent = true } = {}) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (typeof OracleMemory === 'undefined' || !OracleMemory || typeof OracleMemory.learn !== 'function') return false;
+  const prefix = entry.category && entry.category !== 'general'
+    ? `[Rede/${entry.category}] `
+    : '[Rede] ';
+  const fact = `${prefix}${entry.text}`;
+  try {
+    return !!OracleMemory.learn(fact, 'community');
+  } catch (e) {
+    if (!silent) console.warn('Falha ao salvar conhecimento da rede na memoria local:', e);
+    return false;
+  }
+}
+
+function appendKnowledgeNetworkEntry(payload = {}, { learn = true } = {}) {
+  ensureKnowledgeNetworkEntriesLoaded();
+  const entry = normalizeKnowledgeNetworkEntry(payload);
+  if (!entry) return null;
+
+  const textKey = normalizeKnowledgeCompareText(entry.text);
+  const alreadyExists = (knowledgeNetworkEntries || []).some((item) => {
+    if (!item || typeof item !== 'object') return false;
+    if (String(item.id || '') === entry.id) return true;
+    const sameText = normalizeKnowledgeCompareText(item.text || '') === textKey;
+    const sameCategory = String(item.category || '') === String(entry.category || '');
+    const sameSource = String(item.sourceDevice || '') === String(entry.sourceDevice || '');
+    return sameText && sameCategory && sameSource;
+  });
+  if (alreadyExists) return null;
+
+  knowledgeNetworkEntries.push(entry);
+  if (knowledgeNetworkEntries.length > KNOWLEDGE_NETWORK_MAX_ENTRIES) {
+    knowledgeNetworkEntries = knowledgeNetworkEntries.slice(-KNOWLEDGE_NETWORK_MAX_ENTRIES);
+  }
+  persistKnowledgeNetworkEntriesToStorage();
+
+  if (learn) {
+    rememberCommunityKnowledge(entry, { silent: true });
+  }
+
+  return entry;
+}
+
+function getKnowledgeNetworkEntries(limit = 12) {
+  ensureKnowledgeNetworkEntriesLoaded();
+  const max = Math.max(1, Math.min(60, Number(limit) || 12));
+  return (knowledgeNetworkEntries || []).slice().reverse().slice(0, max);
+}
+
+function formatKnowledgeNetworkSummary(limit = 8) {
+  const entries = getKnowledgeNetworkEntries(limit);
+  if (!entries.length) {
+    return '🌐 Rede de conhecimento vazia por enquanto.<br>Diga: <code>rede: [sua dica]</code> para compartilhar.';
+  }
+
+  const lines = entries.map((entry, index) => {
+    const when = Number.isFinite(Date.parse(String(entry.createdAt || '')))
+      ? new Date(entry.createdAt).toLocaleString('pt-BR')
+      : '-';
+    const tags = Array.isArray(entry.tags) && entry.tags.length
+      ? ` <small style="opacity:.75">#${entry.tags.join(' #')}</small>`
+      : '';
+    const safeText = String(entry.text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `${index + 1}. <strong>${safeText}</strong>${tags}<br><small style="opacity:.7">${when}</small>`;
+  });
+
+  return `🌐 <strong>Conhecimento compartilhado entre aparelhos</strong><br><br>${lines.join('<br>')}<br><br><small>Dicas: <code>rede: sua dica aqui</code> • <code>importar conhecimentos da rede</code></small>`;
+}
+
+function inferKnowledgeCategoryFromText(text = '') {
+  const lower = String(text || '').toLowerCase();
+  if (/(finan|dinheiro|gasto|meta|parcela|conta|receita)/i.test(lower)) return 'finance';
+  if (/(tarefa|planejamento|agenda|missao|missao)/i.test(lower)) return 'tasks';
+  if (/(trabalho|ponto|carga|producao|servico|serviço)/i.test(lower)) return 'work';
+  if (/(biblia|bíblia|versiculo|versículo|oracao|oração|deus|jesus|fe|fé)/i.test(lower)) return 'bible';
+  if (/(poker|jogo|arena|mesa)/i.test(lower)) return 'game';
+  return 'general';
+}
+
+function isKnowledgeAutoSyncEnabled() {
+  try {
+    const raw = localStorage.getItem(KNOWLEDGE_NETWORK_AUTO_SYNC_KEY);
+    if (raw === null) return true;
+    return raw !== '0';
+  } catch (e) {
+    return true;
+  }
+}
+
+function buildKnowledgeAutoShareKey(text = '', category = 'general') {
+  return `${normalizeKnowledgeNetworkCategory(category)}::${normalizeKnowledgeCompareText(text)}`;
+}
+
+function registerKnowledgeAutoShareKey(key = '') {
+  const safe = String(key || '').trim().toLowerCase();
+  if (!safe) return false;
+  if (knowledgeNetworkAutoShareRecentKeys.has(safe)) return false;
+  knowledgeNetworkAutoShareRecentKeys.add(safe);
+  if (knowledgeNetworkAutoShareRecentKeys.size > 600) {
+    const first = knowledgeNetworkAutoShareRecentKeys.values().next().value;
+    if (first) knowledgeNetworkAutoShareRecentKeys.delete(first);
+  }
+  return true;
+}
+
+function isKnowledgeContentSafeToShare(text = '', category = 'general') {
+  const safeText = normalizeKnowledgeNetworkText(text);
+  if (!safeText || safeText.length < 18) return false;
+  const wordCount = safeText.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 4) return false;
+
+  const safeCategory = normalizeKnowledgeNetworkCategory(category || 'general');
+  const blockedCategories = new Set(['community', 'profile', 'private', 'personal']);
+  if (blockedCategories.has(safeCategory)) return false;
+
+  const lower = normalizeKnowledgeCompareText(safeText);
+  if (/\[rede\//i.test(safeText) || /^\[rede\]/i.test(safeText)) return false;
+
+  if (
+    /(?:senha|password|token|cpf|rg|cartao|cartao|cvv|pix|chave pix|endereco|endereco|rua|bairro|cep|telefone|celular|whatsapp|gmail|email)/i.test(lower)
+  ) {
+    return false;
+  }
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(safeText)) return false;
+  if (/(https?:\/\/|www\.)/i.test(safeText)) return false;
+  if (/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(safeText)) return false;
+  if (/\b(?:\+?\d[\d\s().-]{7,}\d)\b/.test(safeText)) return false;
+  if (/\b(meu|minha|meus|minhas|nosso|nossa|eu|mim|comigo)\b/.test(lower)) return false;
+
+  return true;
+}
+
+async function processKnowledgeAutoShareQueue() {
+  if (knowledgeNetworkAutoShareBusy) return;
+  if (!knowledgeNetworkAutoShareQueue.length) return;
+  if (!isLoggedIn || !isOnlineNow()) return;
+  knowledgeNetworkAutoShareBusy = true;
+  try {
+    let cycles = 0;
+    while (knowledgeNetworkAutoShareQueue.length > 0 && cycles < 40) {
+      cycles += 1;
+      const item = knowledgeNetworkAutoShareQueue[0];
+      if (!item || !item.text) {
+        knowledgeNetworkAutoShareQueue.shift();
+        continue;
+      }
+      try {
+        await shareKnowledgeWithNetwork(item.text, {
+          parsed: {
+            text: item.text,
+            category: item.category,
+            tags: item.tags
+          },
+          silent: true
+        });
+        knowledgeNetworkAutoShareQueue.shift();
+      } catch (e) {
+        item.attempts = Math.max(0, Number(item.attempts || 0) || 0) + 1;
+        if (item.attempts >= 4) {
+          knowledgeNetworkAutoShareQueue.shift();
+        }
+        break;
+      }
+    }
+  } finally {
+    knowledgeNetworkAutoShareBusy = false;
+  }
+}
+
+function enqueueKnowledgeAutoShare(entry = {}) {
+  if (!isKnowledgeAutoSyncEnabled()) return false;
+  const text = normalizeKnowledgeNetworkText(entry.text || entry.fact || '');
+  if (!text) return false;
+  const category = normalizeKnowledgeNetworkCategory(entry.category || inferKnowledgeCategoryFromText(text));
+  const tags = normalizeKnowledgeNetworkTagList(entry.tags || []);
+  if (!isKnowledgeContentSafeToShare(text, category)) return false;
+
+  const shareKey = buildKnowledgeAutoShareKey(text, category);
+  if (!registerKnowledgeAutoShareKey(shareKey)) return false;
+
+  knowledgeNetworkAutoShareQueue.push({
+    text,
+    category,
+    tags,
+    attempts: 0
+  });
+  if (knowledgeNetworkAutoShareQueue.length > KNOWLEDGE_NETWORK_AUTO_QUEUE_MAX) {
+    knowledgeNetworkAutoShareQueue = knowledgeNetworkAutoShareQueue.slice(-KNOWLEDGE_NETWORK_AUTO_QUEUE_MAX);
+  }
+  processKnowledgeAutoShareQueue().catch(() => {});
+  return true;
+}
+
+function parseKnowledgeShareRequest(input = '') {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+
+  const rules = [
+    /^rede\s*[:\-]\s*/i,
+    /^(compartilhar|compartilhe|publicar|enviar)\s+(conhecimento|aprendizado|dica)(\s+na\s+rede)?\s*[:\-]?\s*/i,
+    /^(treinar|ensinar)\s+(a\s+)?(rede|assistente)\s*[:\-]\s*/i
+  ];
+
+  let content = raw;
+  let matched = false;
+  for (const rule of rules) {
+    if (!rule.test(content)) continue;
+    content = content.replace(rule, '').trim();
+    matched = true;
+    break;
+  }
+  if (!matched) return null;
+
+  const tags = [];
+  content = content.replace(/#([a-zA-Z0-9_-]{2,24})/g, (_, tag) => {
+    tags.push(String(tag || '').toLowerCase());
+    return ' ';
+  });
+  content = normalizeKnowledgeNetworkText(content);
+  return {
+    text: content,
+    tags: normalizeKnowledgeNetworkTagList(tags),
+    category: inferKnowledgeCategoryFromText(content)
+  };
+}
+
+function clearKnowledgeNetworkReconnectTimer() {
+  if (knowledgeNetworkReconnectTimer) {
+    clearTimeout(knowledgeNetworkReconnectTimer);
+    knowledgeNetworkReconnectTimer = null;
+  }
+}
+
+function scheduleKnowledgeNetworkReconnect({ immediate = false, force = false } = {}) {
+  if (!isLoggedIn || !isOnlineNow()) return;
+  clearKnowledgeNetworkReconnectTimer();
+
+  const safeAttempt = Math.min(knowledgeNetworkReconnectAttempt + 1, 12);
+  knowledgeNetworkReconnectAttempt = safeAttempt;
+  const delay = immediate ? 0 : Math.min(20000, 1200 * safeAttempt);
+
+  knowledgeNetworkReconnectTimer = setTimeout(async () => {
+    knowledgeNetworkReconnectTimer = null;
+    try {
+      const shouldForce = force || !!knowledgeNetworkChannel || safeAttempt > 1;
+      const connected = await ensureKnowledgeNetworkConnection({ silent: true, force: shouldForce });
+      if (!connected) {
+        scheduleKnowledgeNetworkReconnect({ immediate: false, force: true });
+      }
+    } catch (e) {
+      console.warn('Falha ao reconectar rede de conhecimento:', e);
+      scheduleKnowledgeNetworkReconnect({ immediate: false, force: true });
+    }
+  }, delay);
+}
+
+function onKnowledgeNetworkStatus(status, meta = {}) {
+  const current = String(status || '').toUpperCase();
+  if (current === 'SUBSCRIBED') {
+    knowledgeNetworkConnected = true;
+    knowledgeNetworkReconnectAttempt = 0;
+    clearKnowledgeNetworkReconnectTimer();
+    processKnowledgeAutoShareQueue().catch(() => {});
+    return;
+  }
+
+  if (current === 'PRESENCE_SYNC') {
+    knowledgeNetworkConnected = true;
+    processKnowledgeAutoShareQueue().catch(() => {});
+    return;
+  }
+
+  if (current === 'CHANNEL_ERROR' || current === 'TIMED_OUT' || current === 'CLOSED') {
+    knowledgeNetworkConnected = false;
+    const detail = String(meta?.message || meta?.error?.message || '').trim();
+    if (detail) {
+      console.warn(`Rede de conhecimento desconectada (${current}):`, detail);
+    }
+    scheduleKnowledgeNetworkReconnect({ immediate: false, force: true });
+  }
+}
+
+function disconnectKnowledgeNetwork() {
+  try {
+    if (
+      knowledgeNetworkChannel &&
+      typeof SupabaseService !== 'undefined' &&
+      typeof SupabaseService.leaveKnowledgeNetwork === 'function'
+    ) {
+      SupabaseService.leaveKnowledgeNetwork(knowledgeNetworkChannel);
+    }
+  } catch (e) {
+    console.warn('Falha ao desconectar rede de conhecimento:', e);
+  } finally {
+    clearKnowledgeNetworkReconnectTimer();
+    knowledgeNetworkReconnectAttempt = 0;
+    knowledgeNetworkJoinPromise = null;
+    knowledgeNetworkChannel = null;
+    knowledgeNetworkConnected = false;
+  }
+}
+
+function waitForKnowledgeNetworkSubscribed(timeoutMs = 8000) {
+  const timeout = Math.max(1200, Number(timeoutMs) || 8000);
+  if (knowledgeNetworkConnected && knowledgeNetworkChannel) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      if (knowledgeNetworkConnected && knowledgeNetworkChannel) {
+        clearInterval(timer);
+        resolve(true);
+        return;
+      }
+      if (!knowledgeNetworkChannel || (Date.now() - startedAt) >= timeout) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, 160);
+  });
+}
+
+async function ensureKnowledgeNetworkConnection({ silent = true, force = false } = {}) {
+  ensureKnowledgeNetworkEntriesLoaded();
+  if (!isLoggedIn) return false;
+  if (!isOnlineNow()) return false;
+
+  if (typeof useSupabase !== 'function' || !useSupabase()) {
+    if (!silent) showToast('⚠️ Rede de conhecimento precisa da nuvem conectada.');
+    return false;
+  }
+
+  if (knowledgeNetworkConnected && knowledgeNetworkChannel && !force) return true;
+  if (knowledgeNetworkJoinPromise) return knowledgeNetworkJoinPromise;
+
+  knowledgeNetworkJoinPromise = (async () => {
+    try {
+      if (force) disconnectKnowledgeNetwork();
+      if (
+        typeof SupabaseService === 'undefined' ||
+        typeof SupabaseService.joinKnowledgeNetwork !== 'function'
+      ) {
+        throw new Error('Conexao da rede de conhecimento indisponivel.');
+      }
+
+      knowledgeNetworkChannel = SupabaseService.joinKnowledgeNetwork({
+        room: KNOWLEDGE_NETWORK_ROOM,
+        onEntry: (payload) => {
+          appendKnowledgeNetworkEntry(payload, { learn: true });
+        },
+        onStatus: (status, meta) => onKnowledgeNetworkStatus(status, meta)
+      });
+
+      if (!knowledgeNetworkChannel) return false;
+      const subscribed = await waitForKnowledgeNetworkSubscribed(9000);
+      if (!subscribed) {
+        knowledgeNetworkConnected = false;
+        scheduleKnowledgeNetworkReconnect({ immediate: false, force: true });
+        if (!silent) showToast('⚠️ A rede de conhecimento demorou para conectar.');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      knowledgeNetworkConnected = false;
+      clearKnowledgeNetworkReconnectTimer();
+      scheduleKnowledgeNetworkReconnect({ immediate: false, force: true });
+      if (!silent) showToast('❌ Nao consegui conectar na rede de conhecimento.');
+      console.warn('Falha ao conectar rede de conhecimento:', e);
+      return false;
+    } finally {
+      knowledgeNetworkJoinPromise = null;
+    }
+  })();
+
+  return knowledgeNetworkJoinPromise;
+}
+
+async function shareKnowledgeWithNetwork(rawText = '', options = {}) {
+  ensureKnowledgeNetworkEntriesLoaded();
+  const silent = !!options?.silent;
+  const input = String(rawText || '').trim();
+  const parsed = options.parsed && typeof options.parsed === 'object'
+    ? options.parsed
+    : parseKnowledgeShareRequest(`rede: ${input}`);
+  const text = normalizeKnowledgeNetworkText(parsed?.text || input);
+  if (!text) {
+    throw new Error('Digite o conhecimento que deseja compartilhar.');
+  }
+
+  const connected = await ensureKnowledgeNetworkConnection({ silent });
+  if (!connected || !knowledgeNetworkChannel) {
+    throw new Error('Rede de conhecimento offline no momento.');
+  }
+
+  const payload = {
+    text,
+    tags: normalizeKnowledgeNetworkTagList(parsed?.tags || []),
+    category: normalizeKnowledgeNetworkCategory(parsed?.category || inferKnowledgeCategoryFromText(text))
+  };
+
+  const sent = await SupabaseService.sendKnowledgeEntry(knowledgeNetworkChannel, payload);
+  const localEntry = appendKnowledgeNetworkEntry(sent, { learn: true });
+  return localEntry || normalizeKnowledgeNetworkEntry(sent);
+}
+
+function importKnowledgeFromNetworkToOracle({ limit = 60 } = {}) {
+  const entries = getKnowledgeNetworkEntries(limit);
+  let imported = 0;
+  entries.forEach((entry) => {
+    if (rememberCommunityKnowledge(entry, { silent: true })) imported += 1;
+  });
+  return { imported, total: entries.length };
+}
+
 function waitForPlayerRoomSubscribed(timeoutMs = 8000) {
   const timeout = Math.max(1200, Number(timeoutMs) || 8000);
   if (playerRoomConnected && playerRoomChannel) return Promise.resolve(true);
@@ -16685,6 +17574,8 @@ function bootstrapPlayerRoomUI() {
   window.addEventListener('online', () => {
     if (isLoggedIn) {
       schedulePlayerRoomReconnect({ immediate: true, force: true });
+      scheduleKnowledgeNetworkReconnect({ immediate: true, force: true });
+      processKnowledgeAutoShareQueue().catch(() => {});
       if (ARENA_DUEL_ENABLED || isPokerOnlineMode()) {
         ensureArenaConnection({ silent: true }).catch((e) => console.warn('Falha ao reconectar arena (online):', e));
       }
@@ -16695,6 +17586,8 @@ function bootstrapPlayerRoomUI() {
     clearPlayerRoomReconnectTimer();
     playerRoomConnected = false;
     setPlayerRoomStatus('Sem internet', 'offline');
+    clearKnowledgeNetworkReconnectTimer();
+    knowledgeNetworkConnected = false;
     arenaConnected = false;
     updateArenaStatus('Sem internet', false);
     clearPlayerRoomAudioRecorder();
@@ -16705,19 +17598,28 @@ function bootstrapPlayerRoomUI() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
     if (!isLoggedIn || !isOnlineNow()) return;
-    if (playerRoomConnected && playerRoomChannel) return;
-    schedulePlayerRoomReconnect({ immediate: true, force: true });
+    if (!playerRoomConnected || !playerRoomChannel) {
+      schedulePlayerRoomReconnect({ immediate: true, force: true });
+    }
+    if (!knowledgeNetworkConnected || !knowledgeNetworkChannel) {
+      scheduleKnowledgeNetworkReconnect({ immediate: true, force: true });
+    }
   });
 
   window.addEventListener('focus', () => {
     if (!isLoggedIn || !isOnlineNow()) return;
-    if (playerRoomConnected && playerRoomChannel) return;
-    schedulePlayerRoomReconnect({ immediate: true, force: true });
+    if (!playerRoomConnected || !playerRoomChannel) {
+      schedulePlayerRoomReconnect({ immediate: true, force: true });
+    }
+    if (!knowledgeNetworkConnected || !knowledgeNetworkChannel) {
+      scheduleKnowledgeNetworkReconnect({ immediate: true, force: true });
+    }
   });
 
   window.addEventListener('beforeunload', () => {
     clearPlayerRoomAudioRecorder();
     endPlayerRoomCall({ sendSignal: false, keepIncoming: false, reason: '' }).catch(() => {});
+    disconnectKnowledgeNetwork();
     if (ARENA_DUEL_ENABLED || isPokerOnlineMode()) disconnectArena({ resetStatus: false });
   });
 
@@ -19080,6 +19982,939 @@ function markAppIntroAsSeen() {
   } catch (e) {}
 }
 
+function buildAppInteractiveGuideStorageKey() {
+  const candidates = [
+    String(currentAuthUserId || '').trim(),
+    String(getCurrentSessionEmail() || '').trim(),
+    String(normalizeAuthEmail(gameState?.username || '') || '').trim()
+  ];
+  const raw = candidates.find((value) => !!value) || '';
+  if (!raw) return `${APP_INTERACTIVE_GUIDE_SEEN_KEY}:default`;
+  return `${APP_INTERACTIVE_GUIDE_SEEN_KEY}:${encodeURIComponent(raw.toLowerCase())}`;
+}
+
+function hasSeenAppInteractiveGuide() {
+  try {
+    return localStorage.getItem(buildAppInteractiveGuideStorageKey()) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+function markAppInteractiveGuideAsSeen() {
+  try {
+    localStorage.setItem(buildAppInteractiveGuideStorageKey(), '1');
+  } catch (e) {}
+}
+
+function isMobileGuideViewport() {
+  try {
+    return !!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches);
+  } catch (e) {
+    return window.innerWidth <= 900;
+  }
+}
+
+function getAppInteractiveGuideStepsForSession() {
+  const mobile = isMobileGuideViewport();
+  const isAdmin = !!isAdminControlUser(gameState);
+  return APP_INTERACTIVE_GUIDE_STEPS.filter((step) => {
+    if (!step || typeof step !== 'object') return false;
+    if (step.mobileOnly && !mobile) return false;
+    if (step.adminOnly && !isAdmin) return false;
+    return true;
+  });
+}
+
+function isGuideElementVisible(el) {
+  if (!el) return false;
+  if (!(el instanceof Element)) return false;
+  const rect = el.getBoundingClientRect();
+  if (!(rect.width > 4 && rect.height > 4)) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) < 0.05) return false;
+  return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+}
+
+function resolveGuideTargetBySelectors(selectors = []) {
+  const list = Array.isArray(selectors) ? selectors : [selectors];
+  let fallback = null;
+  for (const selector of list) {
+    const safeSelector = String(selector || '').trim();
+    if (!safeSelector) continue;
+    let nodes = [];
+    try {
+      nodes = Array.from(document.querySelectorAll(safeSelector));
+    } catch (e) {
+      continue;
+    }
+    if (!nodes.length) continue;
+    const visible = nodes.find((node) => isGuideElementVisible(node));
+    if (visible) return visible;
+    if (!fallback) fallback = nodes[0];
+  }
+  return fallback;
+}
+
+function isGuideClickInsideSelectors(clickedEl, selectors = []) {
+  if (!(clickedEl instanceof Element)) return false;
+  const list = Array.isArray(selectors) ? selectors : [selectors];
+  for (const selector of list) {
+    const safeSelector = String(selector || '').trim();
+    if (!safeSelector) continue;
+    try {
+      if (clickedEl.matches(safeSelector) || !!clickedEl.closest(safeSelector)) {
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
+function ensureAppInteractiveGuideOverlay() {
+  if (appInteractiveGuideUi?.overlay && document.body.contains(appInteractiveGuideUi.overlay)) {
+    return appInteractiveGuideUi;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'appInteractiveGuideOverlay';
+  overlay.className = 'app-guide-overlay hidden';
+  overlay.innerHTML = `
+    <div class="app-guide-backdrop" aria-hidden="true"></div>
+    <div class="app-guide-highlight hidden" id="appGuideHighlight" aria-hidden="true"></div>
+    <div class="app-guide-card" id="appGuideCard" role="dialog" aria-live="polite" aria-label="Guia interativo do app">
+      <div class="app-guide-topline">
+        <span class="app-guide-step" id="appGuideStepLabel">Passo 1</span>
+        <span class="app-guide-progress-text" id="appGuideProgressText">0%</span>
+      </div>
+      <div class="app-guide-progress" aria-hidden="true">
+        <span class="app-guide-progress-fill" id="appGuideProgressFill"></span>
+      </div>
+      <h3 id="appGuideTitle">Guia interativo</h3>
+      <p id="appGuideDescription"></p>
+      <p class="app-guide-hint" id="appGuideHint"></p>
+      <div class="app-guide-actions">
+        <button class="ghost app-guide-action-btn hidden" id="appGuideActionBtn" type="button"></button>
+        <button class="ghost" id="appGuideSkipBtn" type="button">Pular</button>
+        <button class="ghost" id="appGuidePrevBtn" type="button">Voltar</button>
+        <button class="btn" id="appGuideNextBtn" type="button">Próximo</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const ui = {
+    overlay,
+    highlight: overlay.querySelector('#appGuideHighlight'),
+    card: overlay.querySelector('#appGuideCard'),
+    stepLabel: overlay.querySelector('#appGuideStepLabel'),
+    progressText: overlay.querySelector('#appGuideProgressText'),
+    progressFill: overlay.querySelector('#appGuideProgressFill'),
+    titleEl: overlay.querySelector('#appGuideTitle'),
+    descriptionEl: overlay.querySelector('#appGuideDescription'),
+    hintEl: overlay.querySelector('#appGuideHint'),
+    actionBtn: overlay.querySelector('#appGuideActionBtn'),
+    skipBtn: overlay.querySelector('#appGuideSkipBtn'),
+    prevBtn: overlay.querySelector('#appGuidePrevBtn'),
+    nextBtn: overlay.querySelector('#appGuideNextBtn')
+  };
+
+  ui.actionBtn?.addEventListener('click', () => runAppInteractiveGuideHelperAction());
+  ui.skipBtn?.addEventListener('click', () => closeAppInteractiveGuide({ markSeen: true }));
+  ui.prevBtn?.addEventListener('click', () => moveAppInteractiveGuideStep(-1));
+  ui.nextBtn?.addEventListener('click', () => advanceAppInteractiveGuideStep());
+
+  appInteractiveGuideUi = ui;
+  return ui;
+}
+
+function openTabForInteractiveGuide(tabId = '') {
+  const safeTabId = String(tabId || '').trim().toLowerCase();
+  if (!safeTabId) return false;
+  try {
+    if (typeof window.openTabViaMainNav === 'function') {
+      const ok = !!window.openTabViaMainNav(safeTabId);
+      if (ok) return true;
+    }
+  } catch (e) {}
+
+  try {
+    const tabBtn =
+      document.querySelector(`.tab-btn[data-tab="${safeTabId}"]`) ||
+      document.querySelector(`.mobile-drawer-item.tab-btn[data-tab="${safeTabId}"]`);
+    if (tabBtn && typeof tabBtn.click === 'function') {
+      tabBtn.click();
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function ensureInteractiveGuideDrawerOpen() {
+  const overlay = document.getElementById('mobileDrawerOverlay');
+  const moreBtn = document.getElementById('mobileNavMoreBtn');
+  if (!overlay || !moreBtn) return;
+  if (!overlay.classList.contains('hidden')) return;
+  try { moreBtn.click(); } catch (e) {}
+}
+
+function isInteractiveGuideDrawerOpen() {
+  const overlay = document.getElementById('mobileDrawerOverlay');
+  return !!(overlay && !overlay.classList.contains('hidden'));
+}
+
+function isInteractiveGuideTabActive(tabId = '') {
+  const safeTabId = String(tabId || '').trim().toLowerCase();
+  if (!safeTabId) return false;
+  const content = document.getElementById(`tab-${safeTabId}`);
+  if (!content) return false;
+  if (content.classList.contains('active')) return true;
+  try {
+    const style = window.getComputedStyle(content);
+    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0.05;
+  } catch (e) {
+    return false;
+  }
+}
+
+function getAppInteractiveGuideHelperAction(step) {
+  const key = String(step?.helperActionKey || '').trim().toLowerCase();
+  if (!key) return null;
+  switch (key) {
+    case 'open_assistant':
+      return {
+        label: 'Abrir Assistente agora',
+        run: () => {
+          ensureInteractiveGuideOracleOpen();
+          ensureInteractiveGuideAssistantResourcesVisible();
+        }
+      };
+    case 'show_assistant_resources':
+      return {
+        label: 'Mostrar recursos',
+        run: () => {
+          ensureInteractiveGuideAssistantResourcesVisible();
+        }
+      };
+    case 'open_more_menu':
+      return {
+        label: 'Abrir menu Mais',
+        run: () => {
+          ensureInteractiveGuideDrawerOpen();
+        }
+      };
+    case 'open_finance_tab':
+      return {
+        label: 'Abrir Finanças agora',
+        run: () => {
+          openTabForInteractiveGuide('finance');
+        }
+      };
+    case 'open_work_tab':
+      return {
+        label: 'Abrir Trabalho agora',
+        run: () => {
+          openTabForInteractiveGuide('dom');
+        }
+      };
+    case 'open_poker_tab':
+      return {
+        label: 'Abrir Poker agora',
+        run: () => {
+          ensureInteractiveGuideDrawerOpen();
+          openTabForInteractiveGuide('arena');
+        }
+      };
+    case 'open_ia_tab':
+      return {
+        label: 'Abrir IA agora',
+        run: () => {
+          ensureInteractiveGuideDrawerOpen();
+          openTabForInteractiveGuide('ia');
+        }
+      };
+    case 'open_shop_tab':
+      return {
+        label: 'Abrir Loja agora',
+        run: () => {
+          ensureInteractiveGuideDrawerOpen();
+          openTabForInteractiveGuide('shop');
+        }
+      };
+    default:
+      return null;
+  }
+}
+
+function runAppInteractiveGuideHelperAction() {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active) return;
+  const step = state.steps[state.index];
+  if (!step) return;
+  const helper = getAppInteractiveGuideHelperAction(step);
+  if (!helper || typeof helper.run !== 'function') return;
+
+  try {
+    helper.run();
+  } catch (e) {
+    console.warn('Falha ao executar ação auxiliar do guia:', e);
+  }
+
+  const stepKey = String(step.key || '').trim().toLowerCase();
+  if (stepKey === 'assistant_tab' && isAssistantGuideTargetActivated()) {
+    state.clickedCurrent = true;
+    refreshAppInteractiveGuideUI();
+    queueAppInteractiveGuideAutoAdvance(step);
+    return;
+  }
+  if (stepKey === 'mobile_more' && isInteractiveGuideDrawerOpen()) {
+    state.clickedCurrent = true;
+  }
+  if (stepKey === 'ia_tab' && isInteractiveGuideTabActive('ia')) {
+    state.clickedCurrent = true;
+  }
+  if (stepKey === 'shop_tab' && isInteractiveGuideTabActive('shop')) {
+    state.clickedCurrent = true;
+  }
+  if (stepKey === 'poker_tab' && isInteractiveGuideTabActive('arena')) {
+    state.clickedCurrent = true;
+  }
+  refreshAppInteractiveGuideUI();
+  syncAppInteractiveGuideHighlight();
+}
+
+function isCurrentAppInteractiveGuideStep(stepOrKey) {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active || !Array.isArray(state.steps)) return false;
+  const current = state.steps[state.index];
+  const expectedKey = typeof stepOrKey === 'string'
+    ? String(stepOrKey || '').trim().toLowerCase()
+    : String(stepOrKey?.key || '').trim().toLowerCase();
+  const currentKey = String(current?.key || '').trim().toLowerCase();
+  if (!expectedKey || !currentKey) return false;
+  return currentKey === expectedKey;
+}
+
+function closeInteractiveGuideOracleModalIfOpen() {
+  const chatModal = document.getElementById('chatModal');
+  if (!chatModal) return;
+  const isOpen = chatModal.classList.contains('open') || chatModal.classList.contains('active');
+  if (!isOpen) return;
+  chatModal.classList.remove('open');
+  chatModal.classList.remove('active');
+  try {
+    if (typeof syncOracleModalVisibilityState === 'function') syncOracleModalVisibilityState();
+  } catch (e) {}
+}
+
+function notifyInteractiveGuideAssistantStep(step) {
+  const stepKey = String(step?.key || '').trim().toLowerCase();
+  if (!stepKey) return;
+  if (stepKey !== 'assistant_resources' && stepKey !== 'assistant_tab') return;
+
+  const stamp = `${stepKey}:${Number(appInteractiveGuideState?.index || 0)}`;
+  if (appInteractiveGuideAssistantMessageKey === stamp) return;
+  appInteractiveGuideAssistantMessageKey = stamp;
+
+  if (stepKey === 'assistant_tab') {
+    showToast('🤖 Assistente aberto. O guia vai avançar automaticamente para os recursos.', 3200);
+    return;
+  }
+
+  const guideMsg = [
+    '🧭 <strong>Passo do Guia no Assistente</strong><br>',
+    'Toque em <strong>qualquer botão de recurso</strong> para validar este passo:<br>',
+    '• Perguntar<br>',
+    '• Lembrar<br>',
+    '• Memórias<br>',
+    '• Ler PDF<br>',
+    '• Guia<br>',
+    '• ou qualquer card de recurso abaixo'
+  ].join('');
+
+  try {
+    if (typeof addBotMessage === 'function') {
+      addBotMessage(guideMsg);
+    }
+  } catch (e) {}
+  showToast('👇 No Assistente, toque em um botão de recurso para continuar o guia.', 3600);
+}
+
+function ensureInteractiveGuideAssistantNavActive() {
+  const navAssistantBtn = document.querySelector('#mobile-nav .nav-btn[data-view="oraculo"]');
+  if (navAssistantBtn && typeof navAssistantBtn.click === 'function') {
+    const isActive = navAssistantBtn.classList.contains('active') || navAssistantBtn.getAttribute('aria-selected') === 'true';
+    if (!isActive) {
+      try { navAssistantBtn.click(); } catch (e) {}
+    }
+  }
+}
+
+function ensureInteractiveGuideOracleOpen() {
+  ensureInteractiveGuideAssistantNavActive();
+
+  let opened = false;
+  try {
+    if (typeof openOracleChatModal === 'function') {
+      opened = !!openOracleChatModal();
+    }
+  } catch (e) {}
+
+  if (!opened) {
+    try {
+      if (typeof window.openOracleChat === 'function') {
+        opened = !!window.openOracleChat();
+      }
+    } catch (e) {}
+  }
+
+  const chatBtn = document.getElementById('chatBtn');
+  if (!opened && chatBtn && typeof chatBtn.click === 'function') {
+    try { chatBtn.click(); } catch (e) {}
+  }
+
+  const chatModal = document.getElementById('chatModal');
+  if (chatModal && !chatModal.classList.contains('open') && !chatModal.classList.contains('active')) {
+    chatModal.classList.add('open');
+    chatModal.classList.add('active');
+    try {
+      if (typeof syncOracleModalVisibilityState === 'function') syncOracleModalVisibilityState();
+    } catch (e) {}
+  }
+}
+
+function ensureInteractiveGuideAssistantResourcesVisible() {
+  ensureInteractiveGuideAssistantNavActive();
+  const chatModal = document.getElementById('chatModal');
+  if (!chatModal) return;
+
+  // Garante modal de assistente aberto.
+  if (!chatModal.classList.contains('open') && !chatModal.classList.contains('active')) {
+    ensureInteractiveGuideOracleOpen();
+  }
+
+  // Expande os cards de recursos caso estejam recolhidos.
+  const toggleCardsBtn = document.getElementById('oracleToggleCardsBtn');
+  const isCollapsed = chatModal.classList.contains('cards-collapsed');
+  if (isCollapsed) {
+    chatModal.classList.remove('cards-collapsed');
+    if (toggleCardsBtn) {
+      toggleCardsBtn.setAttribute('aria-expanded', 'true');
+      toggleCardsBtn.textContent = '🧩 Ocultar';
+    }
+    try {
+      localStorage.setItem('oracle_capability_cards_collapsed_v1', '0');
+    } catch (e) {}
+  }
+}
+
+function prepareAppInteractiveGuideStep(step) {
+  if (!step || typeof step !== 'object') return;
+  const expectedStepKey = String(step.key || '').trim().toLowerCase();
+  const isAssistantGuideStep = !!(step.ensureAssistantNavActive || step.ensureOracleOpen || step.ensureAssistantResourcesVisible || expectedStepKey === 'assistant_tab');
+
+  if (!isAssistantGuideStep) {
+    closeInteractiveGuideOracleModalIfOpen();
+  }
+
+  if (step.openTab) {
+    openTabForInteractiveGuide(step.openTab);
+  }
+  if (step.ensureAssistantNavActive) {
+    ensureInteractiveGuideAssistantNavActive();
+  }
+  if (step.ensureOracleOpen) {
+    ensureInteractiveGuideOracleOpen();
+  }
+  if (step.ensureAssistantResourcesVisible) {
+    ensureInteractiveGuideAssistantResourcesVisible();
+    // Reforça em mobile: modal/recursos podem levar alguns ciclos para abrir.
+    [180, 420, 900].forEach((delay) => {
+      setTimeout(() => {
+        if (!appInteractiveGuideState?.active) return;
+        if (!isCurrentAppInteractiveGuideStep(expectedStepKey)) return;
+        ensureInteractiveGuideAssistantResourcesVisible();
+      }, delay);
+    });
+  }
+  if (step.ensureDrawerOpen) {
+    ensureInteractiveGuideDrawerOpen();
+  }
+  notifyInteractiveGuideAssistantStep(step);
+}
+
+function appInteractiveGuideStepRequiresClick(step) {
+  return !!(step && step.requireClick !== false);
+}
+
+function refreshAppInteractiveGuideUI() {
+  const state = appInteractiveGuideState;
+  const ui = ensureAppInteractiveGuideOverlay();
+  if (!state || !state.active || !ui) return;
+
+  const step = state.steps[state.index];
+  if (!step) return;
+
+  const total = state.steps.length;
+  const requiresClick = appInteractiveGuideStepRequiresClick(step);
+  const progressPct = Math.max(0, Math.min(100, Math.round(((state.index + 1) / Math.max(1, total)) * 100)));
+  const helperAction = getAppInteractiveGuideHelperAction(step);
+
+  if (ui.stepLabel) ui.stepLabel.textContent = `Passo ${state.index + 1} de ${total}`;
+  if (ui.progressText) ui.progressText.textContent = `${progressPct}%`;
+  if (ui.progressFill) ui.progressFill.style.width = `${progressPct}%`;
+  if (ui.titleEl) ui.titleEl.textContent = String(step.title || 'Guia interativo');
+  if (ui.descriptionEl) ui.descriptionEl.textContent = String(step.description || '');
+
+  if (ui.prevBtn) ui.prevBtn.disabled = state.index <= 0;
+  if (ui.nextBtn) {
+    const isLast = state.index >= total - 1;
+    // Mantemos o botão sempre clicável e validamos no handler de avanço.
+    // Em alguns WebViews mobile, o estado disabled pode ficar "preso" após
+    // a validação visual do passo.
+    ui.nextBtn.disabled = false;
+    ui.nextBtn.textContent = isLast ? 'Concluir Guia' : 'Próximo';
+  }
+
+  if (ui.actionBtn) {
+    const shouldShowAction = !!(requiresClick && !state.clickedCurrent && helperAction);
+    ui.actionBtn.classList.toggle('hidden', !shouldShowAction);
+    ui.actionBtn.disabled = !shouldShowAction;
+    if (shouldShowAction) {
+      ui.actionBtn.textContent = helperAction.label || 'Executar ação';
+    }
+  }
+
+  if (ui.hintEl) {
+    const forceTargetVisible = !!step.forceTargetVisible;
+    const stepKey = String(step?.key || '').trim().toLowerCase();
+    const assistantResourceStep = stepKey === 'assistant_resources';
+    const helperHintSuffix = helperAction && !state.clickedCurrent
+      ? ` Use o botão "${helperAction.label}" se quiser ajuda automática.`
+      : '';
+    if (requiresClick) {
+      if (state.clickedCurrent) {
+        ui.hintEl.textContent = '✅ Passo validado. Toque em Próximo para continuar.';
+      } else if (assistantResourceStep) {
+        ui.hintEl.textContent = `👇 No Assistente, toque em um recurso: Perguntar, Lembrar, Memórias, Ler PDF, Guia ou um card.${helperHintSuffix}`;
+      } else if (state.currentTarget) {
+        ui.hintEl.textContent = `👇 Clique no item destacado para testar este recurso.${helperHintSuffix}`;
+      } else {
+        ui.hintEl.textContent = forceTargetVisible
+          ? `⌛ Abrindo o recurso dentro do Assistente... aguarde e toque no item destacado.${helperHintSuffix}`
+          : `⚠️ Não encontrei este item neste layout. Você pode seguir para o próximo passo.${helperHintSuffix}`;
+      }
+    } else {
+      ui.hintEl.textContent = 'Guia concluído. Você pode fechar quando quiser.';
+    }
+  }
+}
+
+function syncAppInteractiveGuideCardPosition(targetRect = null) {
+  const ui = ensureAppInteractiveGuideOverlay();
+  const card = ui?.card;
+  if (!card) return;
+
+  const state = appInteractiveGuideState;
+  const step = state?.active ? state.steps?.[state.index] : null;
+  if (step?.preferCardTop) {
+    card.classList.add('at-top');
+    card.classList.remove('at-bottom');
+    return;
+  }
+
+  let placeTop = false;
+  if (targetRect) {
+    const viewportHeight = Math.max(1, Number(window.innerHeight || document.documentElement?.clientHeight || 0));
+    const targetInLowerHalf = targetRect.top >= viewportHeight * 0.52 || targetRect.bottom >= viewportHeight * 0.74;
+    placeTop = targetInLowerHalf;
+  }
+
+  card.classList.toggle('at-top', placeTop);
+  card.classList.toggle('at-bottom', !placeTop);
+}
+
+function syncAppInteractiveGuideHighlight() {
+  const state = appInteractiveGuideState;
+  const ui = ensureAppInteractiveGuideOverlay();
+  if (!state || !state.active || !ui?.highlight) return;
+
+  maybeAutoValidateAppInteractiveGuideStep();
+
+  const step = state.steps[state.index];
+  if (!step) return;
+
+  if (step.noTargetHighlight) {
+    state.currentTarget = null;
+    syncAppInteractiveGuideCardPosition(null);
+    ui.highlight.classList.add('hidden');
+    ui.highlight.style.transform = 'translate3d(0, 0, 0)';
+    ui.highlight.style.width = '0px';
+    ui.highlight.style.height = '0px';
+    return;
+  }
+
+  let target = state.currentTarget;
+  if (!target || !document.body.contains(target) || !isGuideElementVisible(target)) {
+    target = resolveGuideTargetBySelectors(step.selectors || []);
+    state.currentTarget = target || null;
+    if (target && !state.scrolledToTarget) {
+      state.scrolledToTarget = true;
+      try {
+        target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+      } catch (e) {}
+    }
+    if (!target && appInteractiveGuideStepRequiresClick(step) && !state.clickedCurrent && !step.forceTargetVisible) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+  }
+
+  if (!target || !isGuideElementVisible(target)) {
+    syncAppInteractiveGuideCardPosition(null);
+    ui.highlight.classList.add('hidden');
+    ui.highlight.style.transform = 'translate3d(0, 0, 0)';
+    ui.highlight.style.width = '0px';
+    ui.highlight.style.height = '0px';
+    return;
+  }
+
+  const rect = target.getBoundingClientRect();
+  syncAppInteractiveGuideCardPosition(rect);
+  const pad = 6;
+  ui.highlight.classList.remove('hidden');
+  ui.highlight.style.transform = `translate3d(${Math.max(4, rect.left - pad)}px, ${Math.max(4, rect.top - pad)}px, 0)`;
+  ui.highlight.style.width = `${Math.max(18, rect.width + pad * 2)}px`;
+  ui.highlight.style.height = `${Math.max(18, rect.height + pad * 2)}px`;
+}
+
+function startAppInteractiveGuideHighlightLoop() {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active) return;
+  if (state.rafId) cancelAnimationFrame(state.rafId);
+
+  const tick = () => {
+    const current = appInteractiveGuideState;
+    if (!current || !current.active) return;
+    syncAppInteractiveGuideHighlight();
+    current.rafId = requestAnimationFrame(tick);
+  };
+  state.rafId = requestAnimationFrame(tick);
+}
+
+function renderAppInteractiveGuideStep() {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active) return;
+  const step = state.steps[state.index];
+  if (!step) return;
+
+  state.currentTarget = null;
+  state.scrolledToTarget = false;
+  state.clickedCurrent = !appInteractiveGuideStepRequiresClick(step);
+  if (state.autoAdvanceTimer) {
+    clearTimeout(state.autoAdvanceTimer);
+    state.autoAdvanceTimer = 0;
+  }
+  state.autoAdvanceToken = '';
+
+  prepareAppInteractiveGuideStep(step);
+  refreshAppInteractiveGuideUI();
+  setTimeout(() => {
+    if (!appInteractiveGuideState?.active) return;
+    syncAppInteractiveGuideHighlight();
+    refreshAppInteractiveGuideUI();
+  }, 220);
+}
+
+function moveAppInteractiveGuideStep(delta = 1) {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active) return;
+  const maxIndex = Math.max(0, state.steps.length - 1);
+  const next = Math.min(maxIndex, Math.max(0, state.index + Number(delta || 0)));
+  if (next === state.index) return;
+  state.index = next;
+  renderAppInteractiveGuideStep();
+}
+
+function handleAppInteractiveGuideClickCapture(event) {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active) return;
+  const step = state.steps[state.index];
+  if (!step || !appInteractiveGuideStepRequiresClick(step)) return;
+  if (state.clickedCurrent) return;
+  const clicked = event?.target;
+  if (!clicked || !(clicked instanceof Element)) return;
+  const target = state.currentTarget;
+  const clickedTarget = !!(target && (clicked === target || target.contains(clicked)));
+  const clickedAnyAllowed = !!(step.allowAnySelectorClick && isGuideClickInsideSelectors(clicked, step.selectors || []));
+  if (!clickedTarget && !clickedAnyAllowed) return;
+
+  state.clickedCurrent = true;
+  refreshAppInteractiveGuideUI();
+
+  queueAppInteractiveGuideAutoAdvance(step);
+}
+
+function isAssistantGuideTargetActivated() {
+  const navAssistantBtn = document.querySelector('#mobile-nav .nav-btn[data-view="oraculo"]');
+  const navActive = !!(navAssistantBtn && (
+    navAssistantBtn.classList.contains('active') ||
+    navAssistantBtn.classList.contains('is-active') ||
+    navAssistantBtn.classList.contains('selected') ||
+    navAssistantBtn.classList.contains('checked') ||
+    navAssistantBtn.getAttribute('aria-selected') === 'true' ||
+    navAssistantBtn.getAttribute('aria-pressed') === 'true' ||
+    navAssistantBtn.getAttribute('aria-current') === 'page'
+  ));
+  const chatModal = document.getElementById('chatModal');
+  const oracleInput = document.getElementById('oracleInput');
+  const oracleCards = document.getElementById('oracleCapabilityCards');
+  const oracleQuick = document.getElementById('oracleQuickActions');
+  let chatVisible = false;
+  if (chatModal) {
+    const chatContainer = chatModal.querySelector('.oracle-container') || chatModal;
+    if (typeof isGuideElementVisible === 'function') {
+      chatVisible = isGuideElementVisible(chatContainer);
+    }
+    if (!chatVisible) {
+      try {
+        const style = window.getComputedStyle(chatModal);
+        chatVisible = style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0.05;
+      } catch (e) {}
+    }
+  }
+  let oracleVisible = false;
+  try {
+    if (typeof isGuideElementVisible === 'function') {
+      oracleVisible = isGuideElementVisible(oracleInput) || isGuideElementVisible(oracleCards) || isGuideElementVisible(oracleQuick);
+    }
+  } catch (e) {}
+  const chatOpen = !!(chatModal && (chatModal.classList.contains('open') || chatModal.classList.contains('active') || chatVisible));
+  return navActive || chatOpen || oracleVisible;
+}
+
+function isAssistantResourcesGuideReady() {
+  const chatModal = document.getElementById('chatModal');
+  if (!chatModal) return false;
+  const chatOpen = chatModal.classList.contains('open') || chatModal.classList.contains('active');
+  if (!chatOpen) return false;
+
+  const quickActions = document.getElementById('oracleQuickActions');
+  const cards = document.getElementById('oracleCapabilityCards');
+  const quickVisible = !!(quickActions && isGuideElementVisible(quickActions));
+  const cardsVisible = !!(cards && isGuideElementVisible(cards));
+  const hasQuickButtons = !!quickActions?.querySelector('button');
+  const hasCardsButtons = !!cards?.querySelector('button');
+
+  return (quickVisible && hasQuickButtons) || (cardsVisible && hasCardsButtons);
+}
+
+function queueAppInteractiveGuideAutoAdvance(step) {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active || !step) return;
+  if (!step.autoAdvanceOnClick) return;
+  if (state.index >= state.steps.length - 1) return;
+  const stepToken = `${Number(state.index || 0)}:${String(step.key || '').trim().toLowerCase()}`;
+  if (state.autoAdvanceTimer && state.autoAdvanceToken === stepToken) return;
+  if (state.autoAdvanceTimer) clearTimeout(state.autoAdvanceTimer);
+  state.autoAdvanceToken = stepToken;
+  state.autoAdvanceTimer = setTimeout(() => {
+    const current = appInteractiveGuideState;
+    if (!current || !current.active) return;
+    const currentStep = current.steps[current.index];
+    if (!currentStep || String(currentStep.key || '') !== String(step.key || '')) return;
+    current.autoAdvanceToken = '';
+    moveAppInteractiveGuideStep(1);
+  }, 260);
+}
+
+function maybeAutoValidateAppInteractiveGuideStep() {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active) return;
+  const step = state.steps[state.index];
+  if (!step || !appInteractiveGuideStepRequiresClick(step)) return;
+  const stepKey = String(step.key || '').trim().toLowerCase();
+  if (stepKey === 'assistant_tab' && isAssistantGuideTargetActivated()) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    queueAppInteractiveGuideAutoAdvance(step);
+    return;
+  }
+  if (stepKey === 'finance_tab' && isInteractiveGuideTabActive('finance')) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    return;
+  }
+  if (stepKey === 'work_tab' && isInteractiveGuideTabActive('dom')) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    return;
+  }
+  if (stepKey === 'poker_tab' && isInteractiveGuideTabActive('arena')) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    return;
+  }
+  if (stepKey === 'ia_tab' && isInteractiveGuideTabActive('ia')) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    return;
+  }
+  if (stepKey === 'shop_tab' && isInteractiveGuideTabActive('shop')) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    return;
+  }
+  if (stepKey === 'assistant_resources' && isAssistantResourcesGuideReady()) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    return;
+  }
+  if (stepKey === 'mobile_more' && isInteractiveGuideDrawerOpen()) {
+    if (!state.clickedCurrent) {
+      state.clickedCurrent = true;
+      refreshAppInteractiveGuideUI();
+    }
+    return;
+  }
+  if (state.clickedCurrent) return;
+}
+
+function advanceAppInteractiveGuideStep() {
+  const state = appInteractiveGuideState;
+  if (!state || !state.active) return;
+  const step = state.steps[state.index];
+  if (!step) return;
+
+  if (appInteractiveGuideStepRequiresClick(step) && !state.clickedCurrent) {
+    showToast('👆 Clique primeiro no item destacado para validar este passo.', 2600);
+    return;
+  }
+
+  if (state.index >= state.steps.length - 1) {
+    closeAppInteractiveGuide({ markSeen: true });
+    showToast('✅ Guia interativo concluído com sucesso!', 2800);
+    return;
+  }
+
+  moveAppInteractiveGuideStep(1);
+}
+
+function openAppInteractiveGuide(options = {}) {
+  if (!isLoggedIn) return;
+  const force = !!options.force;
+  if (!force && hasSeenAppInteractiveGuide()) return;
+
+  const steps = getAppInteractiveGuideStepsForSession();
+  if (!steps.length) return;
+
+  closeGlobalHelpModal();
+  if (elements.appIntroModal?.classList.contains('active')) {
+    closeAppIntro({ markSeen: true });
+  }
+
+  const ui = ensureAppInteractiveGuideOverlay();
+  if (!ui) return;
+
+  if (appInteractiveGuideState?.active) {
+    closeAppInteractiveGuide({ markSeen: false });
+  }
+  appInteractiveGuideAssistantMessageKey = '';
+
+  const startKey = String(options.startKey || '').trim().toLowerCase();
+  const startIndex = Math.max(0, steps.findIndex((step) => String(step?.key || '').trim().toLowerCase() === startKey));
+
+  const state = {
+    active: true,
+    steps,
+    index: startIndex >= 0 ? startIndex : 0,
+    clickedCurrent: false,
+    currentTarget: null,
+    scrolledToTarget: false,
+    autoAdvanceTimer: 0,
+    autoAdvanceToken: '',
+    rafId: 0,
+    clickListener: null,
+    pointerListener: null,
+    touchListener: null
+  };
+  appInteractiveGuideState = state;
+
+  ui.overlay.classList.remove('hidden');
+  ui.overlay.classList.add('active');
+  document.body.classList.add('app-interactive-guide-open');
+
+  state.clickListener = (event) => handleAppInteractiveGuideClickCapture(event);
+  state.pointerListener = (event) => handleAppInteractiveGuideClickCapture(event);
+  state.touchListener = (event) => handleAppInteractiveGuideClickCapture(event);
+  document.addEventListener('click', state.clickListener, true);
+  document.addEventListener('pointerup', state.pointerListener, true);
+  document.addEventListener('touchend', state.touchListener, true);
+
+  renderAppInteractiveGuideStep();
+  startAppInteractiveGuideHighlightLoop();
+}
+
+function closeAppInteractiveGuide(options = {}) {
+  const state = appInteractiveGuideState;
+  const markSeen = options.markSeen !== false;
+
+  if (state?.rafId) {
+    try { cancelAnimationFrame(state.rafId); } catch (e) {}
+  }
+  if (state?.autoAdvanceTimer) {
+    try { clearTimeout(state.autoAdvanceTimer); } catch (e) {}
+  }
+  if (state) state.autoAdvanceToken = '';
+  if (state?.clickListener) {
+    try { document.removeEventListener('click', state.clickListener, true); } catch (e) {}
+  }
+  if (state?.pointerListener) {
+    try { document.removeEventListener('pointerup', state.pointerListener, true); } catch (e) {}
+  }
+  if (state?.touchListener) {
+    try { document.removeEventListener('touchend', state.touchListener, true); } catch (e) {}
+  }
+
+  appInteractiveGuideState = null;
+  appInteractiveGuideAssistantMessageKey = '';
+
+  const ui = ensureAppInteractiveGuideOverlay();
+  if (ui?.overlay) {
+    ui.overlay.classList.remove('active');
+    ui.overlay.classList.add('hidden');
+  }
+  document.body.classList.remove('app-interactive-guide-open');
+
+  if (markSeen) markAppInteractiveGuideAsSeen();
+}
+
+function startInteractiveGuideFromHelp() {
+  closeGlobalHelpModal();
+  openAppInteractiveGuide({ force: true });
+}
+
+function startInteractiveGuideFromIntro() {
+  closeAppIntro({ markSeen: true });
+  openAppInteractiveGuide({ force: true });
+}
+try { window.openAppInteractiveGuide = openAppInteractiveGuide; } catch (e) {}
+try { window.closeAppInteractiveGuide = closeAppInteractiveGuide; } catch (e) {}
+
 function syncGlobalHelpVisibility() {
   if (!elements.globalHelpFab) return;
   const authVisible = !!(elements.authModal && elements.authModal.classList.contains('active'));
@@ -19088,6 +20923,7 @@ function syncGlobalHelpVisibility() {
   if (!shouldShow) {
     if (elements.globalHelpModal) elements.globalHelpModal.classList.remove('active');
     if (elements.appIntroModal) elements.appIntroModal.classList.remove('active');
+    if (appInteractiveGuideState?.active) closeAppInteractiveGuide({ markSeen: false });
   }
   syncHelpGuideFocusMode();
 }
@@ -19169,7 +21005,14 @@ function moveAppIntroStep(delta) {
 function advanceAppIntroStep() {
   const total = APP_INTRO_STEPS.length;
   if (appIntroStepIndex >= total - 1) {
+    const shouldOpenInteractiveGuide = !hasSeenAppInteractiveGuide();
     closeAppIntro({ markSeen: true });
+    if (shouldOpenInteractiveGuide) {
+      setTimeout(() => {
+        if (!isLoggedIn) return;
+        openAppInteractiveGuide({ force: true });
+      }, 220);
+    }
     return;
   }
   moveAppIntroStep(1);
@@ -21209,6 +23052,7 @@ function buildLocalFallbackCharacterData(email = '') {
     securityLockEnabled: false,
     finances: [],
     financialGoal: 0,
+    financeSalaryRule: normalizeFinanceSalaryRuleState(null),
     bills: [],
     deletedWorkLogIds: [],
     relationshipStart: null,
@@ -21357,6 +23201,7 @@ function mapSupabaseProfileToGameState(profile = {}, authEmail = '') {
     relationshipStart: source.relationship_start || source.relationshipStart || null,
     relationshipPhoto: source.relationship_photo || source.relationshipPhoto || null,
     financialGoal: Number(source.financial_goal || source.financialGoal || 0) || 0,
+    financeSalaryRule: normalizeFinanceSalaryRuleState(inventoryData.financeSalaryRule || null),
     oraclePersonality: source.oracle_personality || source.oraclePersonality || 'robot',
     job: inventoryData.job || null,
     bills: Array.isArray(inventoryData.bills) ? inventoryData.bills : [],
@@ -21819,6 +23664,7 @@ async function register() {
       securityLockEnabled: wantsSecurityLock,
       finances: [],
       financialGoal: 0,
+      financeSalaryRule: normalizeFinanceSalaryRuleState(null),
       bills: [],
       deletedWorkLogIds: [],
       relationshipStart: null,
@@ -21886,6 +23732,9 @@ async function logout() {
     isLoggedIn = false;
     canRunFullCloudSync = false;
     gameState = null;
+    disconnectKnowledgeNetwork();
+    disconnectPlayerRoom({ resetStatus: true });
+    disconnectArena({ resetStatus: true });
     stopWorkLocationMonitor();
     clearSession();
     await activateAuthBypassSession();
@@ -21902,6 +23751,7 @@ async function logout() {
   }
   
   disconnectPlayerRoom({ resetStatus: true });
+  disconnectKnowledgeNetwork();
   disconnectArena({ resetStatus: true });
   globalRankCloudProfiles = [];
   globalRankCloudLastFetchAt = 0;
@@ -22075,6 +23925,12 @@ function schedulePostLoginTasks() {
   }, 1200);
 
   deferTask(() => {
+    ensureKnowledgeNetworkConnection({ silent: true }).catch((e) => {
+      console.warn('Falha ao iniciar rede de conhecimento apos login:', e);
+    });
+  }, 1260);
+
+  deferTask(() => {
     consumePendingNativeWorkLocationActions({ silent: true }).catch(() => {});
     syncNativeWorkLocationMonitorState({ requestPermission: false }).catch(() => {});
   }, 1320);
@@ -22175,6 +24031,594 @@ function setAdminPanelStatus(message, isError = false) {
   const safeMessage = String(message || '').trim();
   elements.adminUsersStatus.textContent = safeMessage || 'Gerencie conta, senha, namoro, NoFap, nível e moedas (sem fotos/finanças).';
   elements.adminUsersStatus.style.color = isError ? '#fecaca' : '';
+}
+
+function normalizeKnowledgeLookupText(value = '') {
+  let normalized = String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_\-\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const typoReplacements = [
+    [/\bfinancias\b/g, 'financas'],
+    [/\bfincancias\b/g, 'financas'],
+    [/\bfincancia\b/g, 'financa'],
+    [/\bfinancia\b/g, 'financa'],
+    [/\bfincancas\b/g, 'financas'],
+    [/\bfincanca\b/g, 'financa']
+  ];
+  typoReplacements.forEach(([regex, replacement]) => {
+    normalized = normalized.replace(regex, replacement);
+  });
+  return normalized.replace(/\s+/g, ' ').trim();
+}
+
+const KNOWLEDGE_LOOKUP_STOPWORDS = new Set([
+  'a', 'o', 'os', 'as', 'de', 'da', 'do', 'das', 'dos', 'e', 'ou', 'em', 'na', 'no', 'nas', 'nos',
+  'por', 'para', 'pra', 'com', 'sem', 'um', 'uma', 'uns', 'umas', 'que', 'como', 'qual', 'quais',
+  'meu', 'minha', 'meus', 'minhas', 'seu', 'sua', 'seus', 'suas', 'esta', 'estao', 'estou', 'estamos',
+  'ta', 'to', 'tem', 'tenho', 'sobre'
+]);
+
+function getKnowledgeLookupTokens(value = '', { minLen = 2, maxTokens = 16 } = {}) {
+  const normalized = normalizeKnowledgeLookupText(value);
+  if (!normalized) return [];
+  return normalized
+    .split(' ')
+    .map((token) => token.trim())
+    .filter((token) => token.length >= Math.max(1, Number(minLen) || 2))
+    .filter((token) => !KNOWLEDGE_LOOKUP_STOPWORDS.has(token))
+    .slice(0, Math.max(1, Number(maxTokens) || 16));
+}
+
+function isFinanceStatusQueryInput(value = '') {
+  const safe = normalizeKnowledgeLookupText(value);
+  if (!safe) return false;
+  if (/(saldo|dinheiro|grana|quanto tenho|receita|despesa|gasto|gastos|parcela|parcelado)/.test(safe)) return true;
+  if (/(minha|minhas|meu|meus)\s+financ/.test(safe)) return true;
+  if (/como\s+(esta|estao)\s+(minha|minhas|meu|meus)?\s*financ/.test(safe)) return true;
+  if (/resumo\s+financeiro/.test(safe)) return true;
+  return false;
+}
+
+function normalizeKnowledgeShortText(value = '', maxLen = 140) {
+  return String(value || '')
+    .replace(/\r/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, Math.max(8, Number(maxLen) || 140));
+}
+
+function normalizeKnowledgeLongText(value = '', maxLen = 8000) {
+  return String(value || '')
+    .replace(/\r/g, '')
+    .trim()
+    .slice(0, Math.max(40, Number(maxLen) || 8000));
+}
+
+function normalizeKnowledgeTermList(value, maxItems = 30, maxLen = 40) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[,\n;|]/g);
+  const out = [];
+  const seen = new Set();
+  source.forEach((raw) => {
+    const safe = String(raw || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9_\-\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, Math.max(6, Number(maxLen) || 40));
+    if (!safe || seen.has(safe)) return;
+    seen.add(safe);
+    out.push(safe);
+  });
+  return out.slice(0, Math.max(1, Number(maxItems) || 30));
+}
+
+function normalizeKnowledgePriority(value) {
+  return Math.max(-999, Math.min(999, Math.floor(Number(value) || 0)));
+}
+
+function normalizeKnowledgeEntry(entry = {}) {
+  const safe = entry && typeof entry === 'object' ? entry : {};
+  const id = String(safe.id || '').trim();
+  if (!id) return null;
+  const createdAtRaw = String(safe.created_at || safe.createdAt || '').trim();
+  const updatedAtRaw = String(safe.updated_at || safe.updatedAt || '').trim();
+  return {
+    id,
+    title: normalizeKnowledgeShortText(safe.title || '', 140),
+    content: normalizeKnowledgeLongText(safe.content || '', 8000),
+    tags: normalizeKnowledgeTermList(safe.tags, 24, 36),
+    keywords: normalizeKnowledgeTermList(safe.keywords, 30, 40),
+    priority: normalizeKnowledgePriority(safe.priority),
+    is_active: safe.is_active !== false,
+    created_at: Number.isFinite(Date.parse(createdAtRaw)) ? new Date(createdAtRaw).toISOString() : '',
+    updated_at: Number.isFinite(Date.parse(updatedAtRaw)) ? new Date(updatedAtRaw).toISOString() : ''
+  };
+}
+
+let assistantKnowledgeCacheLoaded = false;
+let assistantKnowledgeCacheUpdatedAt = 0;
+let assistantKnowledgeCacheEntries = [];
+
+function loadAssistantKnowledgeCacheFromStorage() {
+  try {
+    const raw = localStorage.getItem(ASSISTANT_KNOWLEDGE_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const safe = parsed && typeof parsed === 'object' ? parsed : {};
+    const updatedAt = Number(safe.updatedAt || safe.updated_at || 0) || 0;
+    const list = Array.isArray(safe.entries) ? safe.entries : [];
+    const entries = list
+      .map((entry) => normalizeKnowledgeEntry(entry))
+      .filter(Boolean)
+      .slice(-ASSISTANT_KNOWLEDGE_CACHE_MAX_ITEMS);
+    return { updatedAt, entries };
+  } catch (e) {
+    return { updatedAt: 0, entries: [] };
+  }
+}
+
+function ensureAssistantKnowledgeCacheLoaded() {
+  if (assistantKnowledgeCacheLoaded) return;
+  assistantKnowledgeCacheLoaded = true;
+  const snapshot = loadAssistantKnowledgeCacheFromStorage();
+  assistantKnowledgeCacheUpdatedAt = Math.max(0, Number(snapshot.updatedAt || 0) || 0);
+  assistantKnowledgeCacheEntries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
+}
+
+function persistAssistantKnowledgeCache() {
+  try {
+    localStorage.setItem(ASSISTANT_KNOWLEDGE_CACHE_KEY, JSON.stringify({
+      updatedAt: assistantKnowledgeCacheUpdatedAt || Date.now(),
+      entries: (assistantKnowledgeCacheEntries || []).slice(-ASSISTANT_KNOWLEDGE_CACHE_MAX_ITEMS)
+    }));
+  } catch (e) {}
+}
+
+function setAssistantKnowledgeCacheEntries(entries = [], { updatedAt = Date.now() } = {}) {
+  ensureAssistantKnowledgeCacheLoaded();
+  assistantKnowledgeCacheEntries = (Array.isArray(entries) ? entries : [])
+    .map((entry) => normalizeKnowledgeEntry(entry))
+    .filter(Boolean)
+    .slice(-ASSISTANT_KNOWLEDGE_CACHE_MAX_ITEMS);
+  assistantKnowledgeCacheUpdatedAt = Math.max(0, Number(updatedAt || Date.now()) || Date.now());
+  persistAssistantKnowledgeCache();
+}
+
+function mergeAssistantKnowledgeCacheEntries(entries = [], { updatedAt = Date.now() } = {}) {
+  ensureAssistantKnowledgeCacheLoaded();
+  const map = new Map((assistantKnowledgeCacheEntries || []).map((entry) => [String(entry.id), entry]));
+  (Array.isArray(entries) ? entries : []).forEach((raw) => {
+    const normalized = normalizeKnowledgeEntry(raw);
+    if (!normalized) return;
+    map.set(String(normalized.id), normalized);
+  });
+  assistantKnowledgeCacheEntries = Array.from(map.values())
+    .sort((a, b) => {
+      const p = Number(b.priority || 0) - Number(a.priority || 0);
+      if (p !== 0) return p;
+      return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+    })
+    .slice(0, ASSISTANT_KNOWLEDGE_CACHE_MAX_ITEMS);
+  assistantKnowledgeCacheUpdatedAt = Math.max(assistantKnowledgeCacheUpdatedAt, Number(updatedAt || Date.now()) || Date.now());
+  persistAssistantKnowledgeCache();
+}
+
+function scoreKnowledgeEntry(entry = {}, queryText = '') {
+  const safe = normalizeKnowledgeEntry(entry);
+  if (!safe || !safe.is_active) return 0;
+  const normalizedQuery = normalizeKnowledgeLookupText(queryText);
+  const tokens = getKnowledgeLookupTokens(normalizedQuery, { minLen: 2, maxTokens: 16 });
+  const queryCore = tokens.join(' ');
+  if (!tokens.length) return 1 + Math.max(0, Number(safe.priority || 0) * 0.08);
+
+  const titleNorm = normalizeKnowledgeLookupText(safe.title);
+  const contentNorm = normalizeKnowledgeLookupText(safe.content);
+  const tagsNorm = (Array.isArray(safe.tags) ? safe.tags : []).map((tag) => normalizeKnowledgeLookupText(tag));
+  const keywordsNorm = (Array.isArray(safe.keywords) ? safe.keywords : []).map((k) => normalizeKnowledgeLookupText(k));
+  const allEntryText = [titleNorm, contentNorm, ...tagsNorm, ...keywordsNorm].join(' ');
+
+  let score = Math.max(0, Number(safe.priority || 0) * 0.1);
+  if (queryCore && titleNorm.includes(queryCore)) score += 18;
+  else if (normalizedQuery && titleNorm.includes(normalizedQuery)) score += 13;
+  if (queryCore && contentNorm.includes(queryCore)) score += 11;
+  else if (normalizedQuery && contentNorm.includes(normalizedQuery)) score += 8;
+
+  tokens.forEach((token) => {
+    if (titleNorm.includes(token)) score += 6;
+    if (contentNorm.includes(token)) score += 2;
+    if (tagsNorm.some((tag) => tag === token || tag.includes(token))) score += 5;
+    if (keywordsNorm.some((key) => key === token || key.includes(token))) score += 4;
+  });
+
+  const financeQuery = tokens.some((token) =>
+    token.startsWith('financ') ||
+    ['saldo', 'dinheiro', 'grana', 'receita', 'despesa', 'parcela', 'parcelado', 'salario', 'moeda', 'conta'].includes(token)
+  );
+  if (financeQuery) {
+    if (/(financ|saldo|dinheiro|grana|receita|despesa|parcela|parcelado|salario|moeda|conta)/.test(allEntryText)) score += 6;
+    else score -= 4;
+  }
+
+  return score;
+}
+
+async function getAssistantKnowledgeMatches(queryText = '', { limit = 3 } = {}) {
+  const safeLimit = Math.max(1, Math.min(8, Number(limit) || 3));
+  const query = String(queryText || '').trim();
+  ensureAssistantKnowledgeCacheLoaded();
+
+  const canUseCloud = (
+    useSupabase() &&
+    typeof SupabaseService !== 'undefined' &&
+    typeof SupabaseService.searchKnowledgeBase === 'function'
+  );
+
+  if (canUseCloud) {
+    try {
+      const cloudMatches = await SupabaseService.searchKnowledgeBase(query, {
+        limit: safeLimit,
+        sourceLimit: 220
+      });
+      const normalizedMatches = (Array.isArray(cloudMatches) ? cloudMatches : [])
+        .map((entry) => normalizeKnowledgeEntry(entry))
+        .filter(Boolean);
+      if (normalizedMatches.length > 0) {
+        mergeAssistantKnowledgeCacheEntries(normalizedMatches, { updatedAt: Date.now() });
+        return normalizedMatches.map((entry) => ({
+          ...entry,
+          score: scoreKnowledgeEntry(entry, query)
+        }));
+      }
+    } catch (error) {
+      console.warn('Falha ao buscar knowledge_base na nuvem (assistente):', error);
+    }
+  }
+
+  const cacheAge = Date.now() - Math.max(0, Number(assistantKnowledgeCacheUpdatedAt || 0) || 0);
+  if (!assistantKnowledgeCacheEntries.length || cacheAge > ASSISTANT_KNOWLEDGE_CACHE_MAX_AGE_MS) {
+    return [];
+  }
+
+  return (assistantKnowledgeCacheEntries || [])
+    .map((entry) => ({
+      ...entry,
+      score: scoreKnowledgeEntry(entry, query)
+    }))
+    .filter((entry) => Number(entry.score || 0) > 0)
+    .sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      const priorityDiff = Number(b.priority || 0) - Number(a.priority || 0);
+      if (priorityDiff !== 0) return priorityDiff;
+      return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+    })
+    .slice(0, safeLimit);
+}
+
+function escapeKnowledgeHtml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function buildAssistantKnowledgeReply(matches = []) {
+  const list = Array.isArray(matches) ? matches : [];
+  if (!list.length) return null;
+  const top = list[0];
+  if (!top || !top.content) return null;
+
+  const topTitle = escapeKnowledgeHtml(top.title || 'Conhecimento');
+  const topContent = escapeKnowledgeHtml(String(top.content || '').slice(0, 900));
+  const topScore = Number(top.score || 0) || 0;
+  const related = list
+    .slice(1)
+    .filter((item) => {
+      const itemScore = Number(item?.score || 0) || 0;
+      if (itemScore <= 0) return false;
+      if (topScore <= 0) return itemScore >= 8;
+      const ratio = itemScore / topScore;
+      // Mantém apenas relacionados realmente próximos da melhor resposta.
+      return ratio >= 0.72 || itemScore >= 12;
+    })
+    .slice(0, 3);
+  const relatedHtml = related.length
+    ? `<br><br><small><strong>Relacionado:</strong><br>${related.map((item) => {
+      const label = escapeKnowledgeHtml(item.title || String(item.content || '').slice(0, 70));
+      return `• ${label}`;
+    }).join('<br>')}</small>`
+    : '';
+  return `📚 <strong>${topTitle}</strong><br>${topContent}${relatedHtml}`;
+}
+
+function shouldTryAssistantKnowledgeBaseLookup(lowerInput = '') {
+  const safe = normalizeKnowledgeLookupText(lowerInput);
+  if (!safe || safe.length < 4) return false;
+  if (/^(oi|ola|eai|e ai|bom dia|boa tarde|boa noite|tudo bem|como voce esta)\b/.test(safe)) return false;
+  if (/^(lembre|lembra|rede\s*:|importar|sincronizar|mostrar|listar|exibir)\b/.test(safe)) return false;
+  if (/^(criar|adicionar|registrar|iniciar|parar|ativar|desativar|abrir|trocar|mudar|editar|excluir|remover|deletar|completar|concluir)\b/.test(safe)) return false;
+  if (/^(gastei|recebi|meta|tarefa|alarme|timer|cronometro|modo|guia|help|ajuda)\b/.test(safe)) return false;
+  if (isFinanceStatusQueryInput(safe)) return false;
+  if (/(regra\s+(?:de\s+)?salario|regra\s+salarial|divisao\s+do\s+salario|aplicar\s+regra|calcular\s+regra|30\/30\/40)/.test(safe)) return false;
+  return true;
+}
+
+function setAdminKnowledgeStatus(message, isError = false) {
+  if (!elements.adminKnowledgeStatus) return;
+  const safe = String(message || '').trim();
+  elements.adminKnowledgeStatus.textContent = safe || 'Sem alterações.';
+  elements.adminKnowledgeStatus.style.color = isError ? '#fecaca' : '';
+}
+
+function getAdminKnowledgeFilteredEntries() {
+  const queryRaw = String(elements.adminKnowledgeSearchInput?.value || '').trim();
+  const query = normalizeKnowledgeLookupText(queryRaw);
+  const entries = Array.isArray(adminKnowledgeState.entries) ? adminKnowledgeState.entries : [];
+  if (!query) return entries.slice();
+  return entries.filter((entry) => {
+    const haystack = [
+      entry.title,
+      entry.content,
+      ...(Array.isArray(entry.tags) ? entry.tags : []),
+      ...(Array.isArray(entry.keywords) ? entry.keywords : [])
+    ]
+      .map((part) => normalizeKnowledgeLookupText(part))
+      .join(' ');
+    return haystack.includes(query);
+  });
+}
+
+function renderAdminKnowledgeList() {
+  if (!elements.adminKnowledgeList) return;
+  const listEl = elements.adminKnowledgeList;
+  listEl.innerHTML = '';
+
+  const entries = getAdminKnowledgeFilteredEntries();
+  if (!entries.length) {
+    listEl.innerHTML = '<div class="small" style="opacity:.72; padding:8px; text-align:center;">Nenhum conhecimento encontrado.</div>';
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'ghost';
+    item.style.cssText = 'width:100%; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px; margin-bottom:6px; border-radius:8px;';
+    const selected = String(adminKnowledgeState.selectedId || '') === String(entry.id || '');
+    if (selected) {
+      item.style.borderColor = 'var(--accent)';
+      item.style.background = 'rgba(110,231,255,0.14)';
+    }
+
+    const left = document.createElement('div');
+    left.style.minWidth = '0';
+    left.style.flex = '1';
+
+    const titleEl = document.createElement('div');
+    titleEl.style.fontWeight = '700';
+    titleEl.style.wordBreak = 'break-word';
+    titleEl.textContent = entry.title || 'Sem título';
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'small';
+    metaEl.style.opacity = '0.72';
+    const tagsText = Array.isArray(entry.tags) && entry.tags.length ? `#${entry.tags.join(' #')}` : 'sem tags';
+    const activeText = entry.is_active ? 'ativo' : 'inativo';
+    metaEl.textContent = `${activeText} • prioridade ${Number(entry.priority || 0)} • ${tagsText}`;
+
+    left.appendChild(titleEl);
+    left.appendChild(metaEl);
+
+    const right = document.createElement('div');
+    right.style.flex = '0 0 auto';
+    right.style.fontWeight = '700';
+    right.textContent = entry.is_active ? '✅' : '⏸️';
+
+    item.appendChild(left);
+    item.appendChild(right);
+    item.addEventListener('click', () => {
+      selectAdminKnowledgeEntry(entry.id);
+    });
+    listEl.appendChild(item);
+  });
+}
+
+function clearAdminKnowledgeEditor({ keepStatus = false } = {}) {
+  adminKnowledgeState.selectedId = '';
+  if (elements.adminKnowledgeTargetLabel) elements.adminKnowledgeTargetLabel.textContent = 'Novo item de conhecimento';
+  if (elements.adminKnowledgeTitleInput) elements.adminKnowledgeTitleInput.value = '';
+  if (elements.adminKnowledgeContentInput) elements.adminKnowledgeContentInput.value = '';
+  if (elements.adminKnowledgeTagsInput) elements.adminKnowledgeTagsInput.value = '';
+  if (elements.adminKnowledgeKeywordsInput) elements.adminKnowledgeKeywordsInput.value = '';
+  if (elements.adminKnowledgePriorityInput) elements.adminKnowledgePriorityInput.value = '0';
+  if (elements.adminKnowledgeActiveInput) elements.adminKnowledgeActiveInput.checked = true;
+  if (elements.adminKnowledgeDeleteBtn) elements.adminKnowledgeDeleteBtn.disabled = true;
+  if (!keepStatus) setAdminKnowledgeStatus('Novo item.');
+  renderAdminKnowledgeList();
+}
+
+function selectAdminKnowledgeEntry(entryId = '') {
+  const safeId = String(entryId || '').trim();
+  if (!safeId) {
+    clearAdminKnowledgeEditor({ keepStatus: true });
+    return;
+  }
+  const selected = (adminKnowledgeState.entries || []).find((entry) => String(entry.id || '') === safeId);
+  if (!selected) {
+    clearAdminKnowledgeEditor({ keepStatus: true });
+    return;
+  }
+  adminKnowledgeState.selectedId = safeId;
+  if (elements.adminKnowledgeTargetLabel) {
+    const stateText = selected.is_active ? 'ativo' : 'inativo';
+    elements.adminKnowledgeTargetLabel.textContent = `Editando: ${selected.title || 'Sem título'} (${stateText})`;
+  }
+  if (elements.adminKnowledgeTitleInput) elements.adminKnowledgeTitleInput.value = selected.title || '';
+  if (elements.adminKnowledgeContentInput) elements.adminKnowledgeContentInput.value = selected.content || '';
+  if (elements.adminKnowledgeTagsInput) elements.adminKnowledgeTagsInput.value = (Array.isArray(selected.tags) ? selected.tags : []).join(', ');
+  if (elements.adminKnowledgeKeywordsInput) elements.adminKnowledgeKeywordsInput.value = (Array.isArray(selected.keywords) ? selected.keywords : []).join(', ');
+  if (elements.adminKnowledgePriorityInput) elements.adminKnowledgePriorityInput.value = String(normalizeKnowledgePriority(selected.priority));
+  if (elements.adminKnowledgeActiveInput) elements.adminKnowledgeActiveInput.checked = selected.is_active !== false;
+  if (elements.adminKnowledgeDeleteBtn) elements.adminKnowledgeDeleteBtn.disabled = false;
+  setAdminKnowledgeStatus('Item carregado para edição.');
+  renderAdminKnowledgeList();
+}
+
+function collectAdminKnowledgeEditorPayload() {
+  const title = normalizeKnowledgeShortText(elements.adminKnowledgeTitleInput?.value || '', 140);
+  const content = normalizeKnowledgeLongText(elements.adminKnowledgeContentInput?.value || '', 8000);
+  const tags = normalizeKnowledgeTermList(elements.adminKnowledgeTagsInput?.value || '', 24, 36);
+  const keywords = normalizeKnowledgeTermList(elements.adminKnowledgeKeywordsInput?.value || '', 30, 40);
+  const priority = normalizeKnowledgePriority(elements.adminKnowledgePriorityInput?.value);
+  const is_active = elements.adminKnowledgeActiveInput?.checked !== false;
+  return { title, content, tags, keywords, priority, is_active };
+}
+
+async function loadAdminKnowledgeForPanel({ silent = false } = {}) {
+  if (!isAdminControlUser(gameState)) {
+    setAdminKnowledgeStatus('Acesso permitido apenas para admin.', true);
+    return [];
+  }
+  if (adminKnowledgeState.loading) return adminKnowledgeState.entries;
+  adminKnowledgeState.loading = true;
+  if (!silent) setAdminKnowledgeStatus('Carregando base de conhecimento...');
+
+  try {
+    let entries = [];
+    if (
+      useSupabase() &&
+      typeof SupabaseService !== 'undefined' &&
+      typeof SupabaseService.adminListKnowledgeBase === 'function'
+    ) {
+      entries = await SupabaseService.adminListKnowledgeBase({
+        limit: ADMIN_KNOWLEDGE_MAX_ENTRIES,
+        includeInactive: true
+      });
+    } else {
+      ensureAssistantKnowledgeCacheLoaded();
+      entries = (assistantKnowledgeCacheEntries || []).slice();
+    }
+
+    const normalized = (Array.isArray(entries) ? entries : [])
+      .map((entry) => normalizeKnowledgeEntry(entry))
+      .filter(Boolean)
+      .sort((a, b) => {
+        const priorityDiff = Number(b.priority || 0) - Number(a.priority || 0);
+        if (priorityDiff !== 0) return priorityDiff;
+        return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+      });
+
+    adminKnowledgeState.entries = normalized;
+    mergeAssistantKnowledgeCacheEntries(normalized, { updatedAt: Date.now() });
+    renderAdminKnowledgeList();
+
+    if (adminKnowledgeState.selectedId && normalized.some((entry) => String(entry.id || '') === String(adminKnowledgeState.selectedId || ''))) {
+      selectAdminKnowledgeEntry(adminKnowledgeState.selectedId);
+    } else {
+      clearAdminKnowledgeEditor({ keepStatus: true });
+    }
+
+    setAdminKnowledgeStatus(`${normalized.length} item(ns) carregado(s).`);
+    return normalized;
+  } catch (error) {
+    console.error('Erro ao carregar knowledge_base no painel admin:', error);
+    setAdminKnowledgeStatus(String(error?.message || 'Falha ao carregar base de conhecimento.'), true);
+    return [];
+  } finally {
+    adminKnowledgeState.loading = false;
+  }
+}
+
+async function saveAdminKnowledgeFromPanel() {
+  if (!isAdminControlUser(gameState)) {
+    showToast('⚠️ Acesso permitido apenas para admin.');
+    return;
+  }
+  if (
+    !useSupabase() ||
+    typeof SupabaseService === 'undefined' ||
+    typeof SupabaseService.adminUpsertKnowledgeBase !== 'function'
+  ) {
+    showToast('⚠️ Base de conhecimento precisa da nuvem conectada.');
+    return;
+  }
+
+  const payload = collectAdminKnowledgeEditorPayload();
+  if (!payload.title) {
+    showToast('⚠️ Informe um título para o conhecimento.');
+    return;
+  }
+  if (!payload.content) {
+    showToast('⚠️ Informe o conteúdo do conhecimento.');
+    return;
+  }
+
+  const targetId = String(adminKnowledgeState.selectedId || '').trim();
+  setAdminKnowledgeStatus(targetId ? 'Salvando edição...' : 'Salvando novo conhecimento...');
+
+  try {
+    const saved = await SupabaseService.adminUpsertKnowledgeBase({
+      id: targetId || undefined,
+      ...payload
+    });
+    const safeSaved = normalizeKnowledgeEntry(saved);
+    if (!safeSaved) throw new Error('Resposta inválida ao salvar conhecimento.');
+    await loadAdminKnowledgeForPanel({ silent: true });
+    selectAdminKnowledgeEntry(safeSaved.id);
+    showToast(targetId ? '✅ Conhecimento atualizado.' : '✅ Conhecimento criado.');
+    setAdminKnowledgeStatus(targetId ? 'Conhecimento atualizado com sucesso.' : 'Conhecimento salvo com sucesso.');
+  } catch (error) {
+    console.error('Erro ao salvar knowledge_base no painel admin:', error);
+    const msg = String(error?.message || 'Falha ao salvar conhecimento.').slice(0, 220);
+    setAdminKnowledgeStatus(msg, true);
+    showToast(`❌ ${msg}`);
+  }
+}
+
+async function deleteAdminKnowledgeFromPanel() {
+  if (!isAdminControlUser(gameState)) {
+    showToast('⚠️ Acesso permitido apenas para admin.');
+    return;
+  }
+  const targetId = String(adminKnowledgeState.selectedId || '').trim();
+  if (!targetId) {
+    showToast('⚠️ Selecione um item da base de conhecimento.');
+    return;
+  }
+  if (
+    !useSupabase() ||
+    typeof SupabaseService === 'undefined' ||
+    typeof SupabaseService.adminDeleteKnowledgeBase !== 'function'
+  ) {
+    showToast('⚠️ Base de conhecimento precisa da nuvem conectada.');
+    return;
+  }
+
+  const selected = (adminKnowledgeState.entries || []).find((entry) => String(entry.id || '') === targetId);
+  const label = selected?.title || 'este item';
+  if (!confirm(`Deseja excluir "${label}" da base de conhecimento?`)) return;
+
+  setAdminKnowledgeStatus('Excluindo conhecimento...');
+  try {
+    await SupabaseService.adminDeleteKnowledgeBase(targetId);
+    showToast('✅ Conhecimento excluído.');
+    clearAdminKnowledgeEditor({ keepStatus: true });
+    await loadAdminKnowledgeForPanel({ silent: true });
+    setAdminKnowledgeStatus('Conhecimento excluído com sucesso.');
+  } catch (error) {
+    console.error('Erro ao excluir knowledge_base no painel admin:', error);
+    const msg = String(error?.message || 'Falha ao excluir conhecimento.').slice(0, 220);
+    setAdminKnowledgeStatus(msg, true);
+    showToast(`❌ ${msg}`);
+  }
 }
 
 function normalizeAdminPanelCoins(value) {
@@ -22785,6 +25229,10 @@ function openAdminUsersPanel() {
   loadAdminUsersForPanel().catch((error) => {
     console.error('Erro ao abrir painel admin:', error);
     setAdminPanelStatus(String(error?.message || 'Falha ao abrir painel admin.'), true);
+  });
+  loadAdminKnowledgeForPanel({ silent: false }).catch((error) => {
+    console.error('Erro ao abrir knowledge_base no painel admin:', error);
+    setAdminKnowledgeStatus(String(error?.message || 'Falha ao abrir base de conhecimento.'), true);
   });
 }
 
@@ -25321,6 +27769,7 @@ function normalizeGameState(data) {
     financeLastManualResetAt: null,
     financePending: [],
     financialGoal: 0,
+    financeSalaryRule: normalizeFinanceSalaryRuleState(data.financeSalaryRule || null),
     savings: { total: 0, goal: 0, history: [] },
     pokerOnlineBonusClaimed: false,
     salaryMission: null,
@@ -25578,6 +28027,7 @@ function normalizeGameState(data) {
   if (typeof merged.financeSelectedMonth !== 'string' || !/^\d{4}-\d{2}$/.test(merged.financeSelectedMonth)) {
     merged.financeSelectedMonth = null;
   }
+  merged.financeSalaryRule = normalizeFinanceSalaryRuleState(merged.financeSalaryRule || null);
 
   merged.xpHistory = normalizeXpHistoryMap(merged.xpHistory, 365);
 
@@ -26218,7 +28668,9 @@ function stateHasMeaningfulProgress(state = {}) {
       'gratitudeJournal',
       'taskHistory',
       'expenseGroups',
-      'trophies'
+      'trophies',
+      'adminNewsInbox',
+      'playerRoomBlessOutbox'
     ];
     for (const field of arrayFallbackFields) {
       if (!hasNonEmptyArray(safeCloud[field]) && hasNonEmptyArray(safeLocal[field])) {
@@ -26294,6 +28746,14 @@ function stateHasMeaningfulProgress(state = {}) {
         usedLocalFallback = true;
       }
     }
+
+    if ((!safeCloud.adminMaintenance || typeof safeCloud.adminMaintenance !== 'object')
+      && safeLocal.adminMaintenance
+      && typeof safeLocal.adminMaintenance === 'object') {
+      safeCloud.adminMaintenance = cloneStateValue(safeLocal.adminMaintenance);
+      usedLocalFallback = true;
+    }
+
     const cloudSavingsTotal = Math.max(0, Number(safeCloud.savings?.total || 0) || 0);
     const cloudSavingsHistorySize = Array.isArray(safeCloud.savings?.history) ? safeCloud.savings.history.length : 0;
     const localSavingsTotal = Math.max(0, Number(safeLocal.savings?.total || 0) || 0);
@@ -27476,6 +29936,16 @@ function getFinanceViewMonthKey() {
   return gameState.financeSelectedMonth || getFinanceMonthKey(new Date());
 }
 
+function getAssistantFinanceMonthContext() {
+  ensureFinanceMonthlyState();
+  const viewMonth = getFinanceViewMonthKey();
+  const monthLabel = formatFinanceMonthLabel(viewMonth);
+  const monthSummary = getFinanceMonthSummary(viewMonth);
+  const transactions = (Array.isArray(gameState?.finances) ? gameState.finances : [])
+    .filter((t) => getFinanceMonthKey(t?.date) === viewMonth);
+  return { viewMonth, monthLabel, monthSummary, transactions };
+}
+
 function setFinanceViewMonth(monthKey) {
   if (!gameState) return;
   ensureFinanceMonthlyState();
@@ -28126,7 +30596,8 @@ function renderFinances() {
   if (elements.financeList) elements.financeList.innerHTML = '';
   const transactions = (gameState.finances || []).filter(t => getFinanceMonthKey(t?.date) === viewMonth);
   const monthSummary = getFinanceMonthSummary(viewMonth);
-  const balance = monthSummary.closingBalance;
+  const balance = monthSummary.monthNet;
+  const accumulatedBalance = monthSummary.closingBalance;
   const expenseTotal = monthSummary.expense;
 
   // Filtra para exibição
@@ -28224,7 +30695,7 @@ function renderFinances() {
     elements.financeCurrentMonthLabel.textContent = `Mês selecionado: ${currentMonthLabel} • saldo do mês: R$ ${monthSummary.monthNet.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   if (elements.financeCarryOverLabel) {
-    elements.financeCarryOverLabel.textContent = `Saldo trazido do mês anterior: R$ ${monthSummary.openingBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    elements.financeCarryOverLabel.textContent = `Saldo trazido do mês anterior: R$ ${monthSummary.openingBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • saldo acumulado até este mês: R$ ${accumulatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   if (elements.financeMonthPicker) {
     elements.financeMonthPicker.value = viewMonth || '';
@@ -30033,33 +32504,95 @@ function toggleZenBreathing() {
   }
 }
 
+function addYearsClamped(date, yearsToAdd = 0) {
+  const source = date instanceof Date ? date : new Date(date);
+  const years = Number(yearsToAdd || 0);
+  const out = new Date(source.getTime());
+  if (!Number.isFinite(out.getTime()) || !Number.isFinite(years)) return out;
+  const day = out.getDate();
+  out.setDate(1);
+  out.setFullYear(out.getFullYear() + years);
+  const maxDay = new Date(out.getFullYear(), out.getMonth() + 1, 0).getDate();
+  out.setDate(Math.min(day, maxDay));
+  return out;
+}
+
+function addMonthsClamped(date, monthsToAdd = 0) {
+  const source = date instanceof Date ? date : new Date(date);
+  const months = Number(monthsToAdd || 0);
+  const out = new Date(source.getTime());
+  if (!Number.isFinite(out.getTime()) || !Number.isFinite(months)) return out;
+  const day = out.getDate();
+  out.setDate(1);
+  out.setMonth(out.getMonth() + months);
+  const maxDay = new Date(out.getFullYear(), out.getMonth() + 1, 0).getDate();
+  out.setDate(Math.min(day, maxDay));
+  return out;
+}
+
+function getRelationshipDurationParts(startInput, endInput = new Date()) {
+  const start = startInput instanceof Date ? new Date(startInput.getTime()) : parseRelationshipStartDate(startInput);
+  const end = endInput instanceof Date ? new Date(endInput.getTime()) : new Date(endInput);
+  if (!(start instanceof Date) || !Number.isFinite(start.getTime())) return null;
+  if (!(end instanceof Date) || !Number.isFinite(end.getTime())) return null;
+  if (start > end) return null;
+
+  let cursor = new Date(start.getTime());
+  let years = 0;
+  let months = 0;
+
+  for (;;) {
+    const next = addYearsClamped(cursor, 1);
+    if (next <= end) {
+      cursor = next;
+      years += 1;
+      continue;
+    }
+    break;
+  }
+
+  for (;;) {
+    const next = addMonthsClamped(cursor, 1);
+    if (next <= end) {
+      cursor = next;
+      months += 1;
+      continue;
+    }
+    break;
+  }
+
+  let remainingMs = Math.max(0, end.getTime() - cursor.getTime());
+  const days = Math.floor(remainingMs / 86400000);
+  remainingMs -= days * 86400000;
+  const hours = Math.floor(remainingMs / 3600000);
+  remainingMs -= hours * 3600000;
+  const minutes = Math.floor(remainingMs / 60000);
+  remainingMs -= minutes * 60000;
+  const seconds = Math.floor(remainingMs / 1000);
+
+  return { years, months, days, hours, minutes, seconds };
+}
+
 function updateRelationshipTimer() {
   if (!gameState || !gameState.relationshipStart || !elements.relationshipTimer) return;
-  
-  const start = new Date(gameState.relationshipStart);
+
+  const start = parseRelationshipStartDate(gameState.relationshipStart);
   const now = new Date();
-  
-  if (start > now) {
+
+  if (!start || start > now) {
     elements.relationshipTimer.textContent = "A data é no futuro!";
+    if (elements.zenTimer) elements.zenTimer.textContent = "A data é no futuro!";
     return;
   }
 
-  let years = now.getFullYear() - start.getFullYear();
-  let months = now.getMonth() - start.getMonth();
-  let days = now.getDate() - start.getDate();
-  let hours = now.getHours() - start.getHours();
-  let minutes = now.getMinutes() - start.getMinutes();
-  let seconds = now.getSeconds() - start.getSeconds();
-
-  if (seconds < 0) { seconds += 60; minutes--; }
-  if (minutes < 0) { minutes += 60; hours--; }
-  if (hours < 0) { hours += 24; days--; }
-  if (days < 0) {
-    const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-    days += prevMonth.getDate();
-    months--;
+  const partsDuration = getRelationshipDurationParts(start, now);
+  if (!partsDuration) {
+    elements.relationshipTimer.textContent = 'Tempo indisponível';
+    if (elements.zenTimer) elements.zenTimer.textContent = 'Tempo indisponível';
+    return;
   }
-  if (months < 0) { months += 12; years--; }
+
+  const { years, months, days, hours, minutes, seconds } = partsDuration;
 
   const parts = [];
   if (years > 0) parts.push(`${years} ano${years !== 1 ? 's' : ''}`);
@@ -30676,9 +33209,14 @@ const JOB_TYPES = {
 
 const WORK_LOCATION_DEFAULT_RADIUS_METERS = 220;
 const WORK_LOCATION_CHECK_INTERVAL_MS = 20 * 1000;
-const WORK_LOCATION_PROMPT_COOLDOWN_MS = 30 * 60 * 1000;
+const WORK_LOCATION_PROMPT_COOLDOWN_MS = 2 * 60 * 1000;
 const WORK_LOCATION_PERMISSION_PROMPT_COOLDOWN_MS = 10 * 60 * 1000;
-const WORK_TIMER_AUTO_STOP_DISTANCE_METERS = 1;
+const WORK_TIMER_AUTO_STOP_DISTANCE_METERS = 120;
+const WORK_TIMER_AUTO_STOP_GRACE_MS = 2 * 60 * 1000;
+const WORK_TIMER_AUTO_STOP_MIN_CHECKS = 3;
+const WORK_TIMER_AUTO_START_STAY_MS = 10 * 60 * 1000;
+const WORK_TIMER_AUTO_START_MAX_DRIFT_METERS = 60;
+const WORK_TIMER_AUTO_START_HOLD_KEY = 'work_timer_auto_start_hold';
 const WORK_WEEKLY_BASE_XP_REWARD = 25;
 const WORK_WEEKLY_BASE_XP_PENALTY = 12;
 const WORK_WEEK_PLAN_MAX_ITEMS = 420;
@@ -30697,8 +33235,31 @@ let _workLocationMonitorLastDistanceMeters = null;
 let _workLocationMonitorLastCheckAt = 0;
 let _workLocationLastActionAt = 0;
 let _workLocationPermissionPromptAt = 0;
+let _workLocationOutsideSinceMs = 0;
+let _workLocationOutsideChecks = 0;
+let _workLocationInsideSinceMs = 0;
+let _workLocationInsideAnchorLat = NaN;
+let _workLocationInsideAnchorLng = NaN;
 let _nativeWorkLocationMonitorPlugin = null;
 let _nativeWorkLocationSyncPromise = null;
+
+function setWorkTimerAutoStartHold(enabled = false) {
+  try {
+    if (enabled) {
+      localStorage.setItem(WORK_TIMER_AUTO_START_HOLD_KEY, '1');
+    } else {
+      localStorage.removeItem(WORK_TIMER_AUTO_START_HOLD_KEY);
+    }
+  } catch (e) {}
+}
+
+function isWorkTimerAutoStartHoldActive() {
+  try {
+    return localStorage.getItem(WORK_TIMER_AUTO_START_HOLD_KEY) === '1';
+  } catch (e) {
+    return false;
+  }
+}
 
 function toIsoLocalDate(dateObj) {
   if (!(dateObj instanceof Date) || !Number.isFinite(dateObj.getTime())) return '';
@@ -31287,7 +33848,7 @@ async function setWorkLocationFromCurrentPosition() {
     });
 
     renderWorkTab();
-    startWorkLocationMonitor();
+    startWorkLocationMonitor({ forcePrompt: true, requestPermission: true });
     showToast('✅ Local de trabalho salvo pelo GPS.');
   } catch (error) {
     console.warn('Falha ao capturar localização de trabalho:', error);
@@ -31302,7 +33863,7 @@ async function setWorkLocationFromCurrentPosition() {
       const point = await ensureWorkAddressCoordinates({ address: fallbackAddress, force: true, silent: true });
       if (point) {
         renderWorkTab();
-        startWorkLocationMonitor();
+        startWorkLocationMonitor({ forcePrompt: true, requestPermission: true });
         showToast('📍 Usei o endereço salvo como local aproximado.');
       }
     }
@@ -31522,7 +34083,7 @@ function getStoredWorkTimerStartTime() {
   }
 }
 
-async function syncNativeWorkTimerStateWithMonitor({ running = null, startTime = null } = {}) {
+async function syncNativeWorkTimerStateWithMonitor({ running = null, startTime = null, autoStartHold = null } = {}) {
   if (!isNativeCapacitorPlatform()) return false;
   const plugin = getNativeWorkLocationMonitorPlugin();
   if (!plugin || typeof plugin.syncTimerState !== 'function') return false;
@@ -31534,15 +34095,15 @@ async function syncNativeWorkTimerStateWithMonitor({ running = null, startTime =
     : fallbackStart;
   const safeRunning = typeof running === 'boolean' ? running : (safeStart > 0);
 
-  // Evita disparar sync "running=false" em builds Android antigos do plugin nativo,
-  // que podiam iniciar foreground service sem promover para notificação em tempo hábil.
-  if (!safeRunning) return true;
-
   try {
-    await plugin.syncTimerState({
+    const payload = {
       running: !!safeRunning,
       startTime: safeRunning ? safeStart : 0
-    });
+    };
+    if (typeof autoStartHold === 'boolean') {
+      payload.autoStartHold = !!autoStartHold;
+    }
+    await plugin.syncTimerState(payload);
     return true;
   } catch (e) {
     console.warn('Falha ao sincronizar timer no monitor nativo:', e);
@@ -31550,11 +34111,33 @@ async function syncNativeWorkTimerStateWithMonitor({ running = null, startTime =
   }
 }
 
-async function resolveWorkLocationPointForNativeMonitor(job = ensureWorkJobDefaults()) {
+async function resolveWorkLocationPointForNativeMonitor(job = ensureWorkJobDefaults(), { requestPermission = false } = {}) {
   const hasAddress = !!String(job?.address || '').trim();
   let point = getWorkLocationPoint();
   if (!point && hasAddress) {
     point = await ensureWorkAddressCoordinates({ address: job.address, force: false, silent: true });
+  }
+  if (!point) {
+    try {
+      const pos = await getCurrentDevicePosition({
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 60000,
+        requestPermission: !!requestPermission
+      });
+      const lat = Number(pos?.coords?.latitude);
+      const lng = Number(pos?.coords?.longitude);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        setWorkLocationPoint({ lat, lng }, {
+          source: 'gps-current',
+          addressSnapshot: String(job?.address || '').trim(),
+          persist: true
+        });
+        point = getWorkLocationPoint();
+      }
+    } catch (e) {
+      // Se não conseguir GPS agora, mantém fluxo normal.
+    }
   }
   if (!point) return null;
   const lat = Number(point.lat);
@@ -31571,7 +34154,7 @@ function stopWorkLocationMonitorIntervalOnly() {
   }
 }
 
-async function syncNativeWorkLocationMonitorState({ requestPermission = false, forceDisable = false } = {}) {
+async function syncNativeWorkLocationMonitorState({ requestPermission = false, forceDisable = false, forcePrompt = false } = {}) {
   if (!isNativeCapacitorPlatform()) return false;
   if (_nativeWorkLocationSyncPromise) return _nativeWorkLocationSyncPromise;
 
@@ -31591,7 +34174,7 @@ async function syncNativeWorkLocationMonitorState({ requestPermission = false, f
 
     const job = ensureWorkJobDefaults();
     const hasAddress = !!String(job?.address || '').trim();
-    const isEligible = !!(job?.name && job?.geoMonitor?.enabled && (hasWorkLocationPoint() || hasAddress));
+    const isEligible = !!(job?.name && job?.geoMonitor?.enabled && (hasWorkLocationPoint() || hasAddress || requestPermission));
     if (!isEligible) {
       if (typeof plugin.stopMonitor === 'function') {
         try { await plugin.stopMonitor(); } catch (e) {}
@@ -31599,7 +34182,7 @@ async function syncNativeWorkLocationMonitorState({ requestPermission = false, f
       return true;
     }
 
-    const point = await resolveWorkLocationPointForNativeMonitor(job);
+    const point = await resolveWorkLocationPointForNativeMonitor(job, { requestPermission });
     if (!point) {
       if (typeof plugin.stopMonitor === 'function') {
         try { await plugin.stopMonitor(); } catch (e) {}
@@ -31637,7 +34220,8 @@ async function syncNativeWorkLocationMonitorState({ requestPermission = false, f
           workLng: point.lng,
           radiusMeters: getWorkLocationRadiusMeters(),
           promptCooldownMs: WORK_LOCATION_PROMPT_COOLDOWN_MS,
-          autoStopDistanceMeters: WORK_TIMER_AUTO_STOP_DISTANCE_METERS
+          autoStopDistanceMeters: WORK_TIMER_AUTO_STOP_DISTANCE_METERS,
+          resetPrompt: !!forcePrompt
         });
       } catch (e) {
         console.warn('Falha ao iniciar monitor nativo de trabalho:', e);
@@ -31770,17 +34354,81 @@ async function checkWorkLocationProximity({ manual = false, allowPermissionPromp
 
     const timerRunning = !!window.WorkTimer?.isRunning?.();
     if (!isInside) {
-      if (timerRunning && distance > WORK_TIMER_AUTO_STOP_DISTANCE_METERS && window.WorkTimer && typeof window.WorkTimer.stop === 'function') {
-        window.WorkTimer.stop();
-        showToast(`⏹️ Ponto encerrado automaticamente. Você saiu ${formatDistanceMeters(distance)} do trabalho.`);
-        return { distance, inside: false, timerStopped: true, autoStopped: true };
+      // Ao sair da área, libera novamente o auto-início para a próxima chegada.
+      if (isWorkTimerAutoStartHoldActive()) {
+        setWorkTimerAutoStartHold(false);
+        syncNativeWorkTimerStateWithMonitor({ autoStartHold: false }).catch(() => {});
       }
+      _workLocationInsideSinceMs = 0;
+      _workLocationInsideAnchorLat = NaN;
+      _workLocationInsideAnchorLng = NaN;
+
+      if (timerRunning && distance > WORK_TIMER_AUTO_STOP_DISTANCE_METERS && window.WorkTimer && typeof window.WorkTimer.stop === 'function') {
+        const nowMs = Date.now();
+        if (_workLocationOutsideSinceMs <= 0) _workLocationOutsideSinceMs = nowMs;
+        _workLocationOutsideChecks += 1;
+        const outsideElapsedMs = Math.max(0, nowMs - _workLocationOutsideSinceMs);
+        const shouldAutoStopNow = _workLocationOutsideChecks >= WORK_TIMER_AUTO_STOP_MIN_CHECKS
+          && outsideElapsedMs >= WORK_TIMER_AUTO_STOP_GRACE_MS;
+
+        if (shouldAutoStopNow) {
+          _workLocationOutsideSinceMs = 0;
+          _workLocationOutsideChecks = 0;
+          window.WorkTimer.stop({ source: 'auto-geofence-stop' });
+          showToast(`⏹️ Ponto encerrado automaticamente. Você ficou fora da área de trabalho por ${Math.round(outsideElapsedMs / 1000)}s.`);
+          return { distance, inside: false, timerStopped: true, autoStopped: true };
+        }
+        return {
+          distance,
+          inside: false,
+          outsidePending: true,
+          outsideChecks: _workLocationOutsideChecks,
+          outsideElapsedMs
+        };
+      }
+      _workLocationOutsideSinceMs = 0;
+      _workLocationOutsideChecks = 0;
       return { distance, inside: false };
+    }
+
+    _workLocationOutsideSinceMs = 0;
+    _workLocationOutsideChecks = 0;
+
+    const nowInsideMs = Date.now();
+    if (!Number.isFinite(_workLocationInsideAnchorLat) || !Number.isFinite(_workLocationInsideAnchorLng)) {
+      _workLocationInsideAnchorLat = currentLat;
+      _workLocationInsideAnchorLng = currentLng;
+      _workLocationInsideSinceMs = nowInsideMs;
+    } else {
+      const driftMeters = haversineDistanceMeters(
+        _workLocationInsideAnchorLat,
+        _workLocationInsideAnchorLng,
+        currentLat,
+        currentLng
+      );
+      if (driftMeters > WORK_TIMER_AUTO_START_MAX_DRIFT_METERS) {
+        _workLocationInsideAnchorLat = currentLat;
+        _workLocationInsideAnchorLng = currentLng;
+        _workLocationInsideSinceMs = nowInsideMs;
+      } else if (_workLocationInsideSinceMs <= 0) {
+        _workLocationInsideSinceMs = nowInsideMs;
+      }
     }
 
     if (timerRunning) {
       if (manual) showToast('⏱️ O ponto já está em andamento.');
       return { distance, inside: true, timerRunning: true };
+    }
+
+    const effectiveInsideSince = _workLocationInsideSinceMs > 0 ? _workLocationInsideSinceMs : nowInsideMs;
+    const insideElapsedMs = Math.max(0, nowInsideMs - effectiveInsideSince);
+    if (!manual && isWorkTimerAutoStartHoldActive()) {
+      return { distance, inside: true, autoStartHeld: true };
+    }
+    if (!manual && insideElapsedMs >= WORK_TIMER_AUTO_START_STAY_MS && window.WorkTimer && typeof window.WorkTimer.start === 'function') {
+      window.WorkTimer.start({ startTime: effectiveInsideSince, source: 'auto-presence-start' });
+      showToast('⏱️ Ponto iniciado automaticamente desde sua chegada ao trabalho.');
+      return { distance, inside: true, autoStarted: true, startTime: effectiveInsideSince };
     }
 
     const now = Date.now();
@@ -31833,11 +34481,24 @@ async function checkWorkLocationProximity({ manual = false, allowPermissionPromp
 
 function stopWorkLocationMonitor() {
   stopWorkLocationMonitorIntervalOnly();
+  _workLocationOutsideSinceMs = 0;
+  _workLocationOutsideChecks = 0;
+  _workLocationInsideSinceMs = 0;
+  _workLocationInsideAnchorLat = NaN;
+  _workLocationInsideAnchorLng = NaN;
   syncNativeWorkLocationMonitorState({ forceDisable: true }).catch(() => {});
 }
 
-function startWorkLocationMonitor() {
+function startWorkLocationMonitor(options = {}) {
+  const opts = (options && typeof options === 'object') ? options : {};
+  const forcePrompt = !!opts.forcePrompt;
+  const requestPermissionExplicit = typeof opts.requestPermission === 'boolean' ? opts.requestPermission : null;
   stopWorkLocationMonitorIntervalOnly();
+  _workLocationOutsideSinceMs = 0;
+  _workLocationOutsideChecks = 0;
+  _workLocationInsideSinceMs = 0;
+  _workLocationInsideAnchorLat = NaN;
+  _workLocationInsideAnchorLng = NaN;
   const job = ensureWorkJobDefaults();
   const hasAddress = !!String(job?.address || '').trim();
   if (!job || !job.name || !job.geoMonitor?.enabled || (!hasWorkLocationPoint() && !hasAddress)) {
@@ -31847,7 +34508,10 @@ function startWorkLocationMonitor() {
 
   if (isNativeCapacitorPlatform()) {
     syncNativeWorkLocationMonitorState({
-      requestPermission: shouldRequestWorkLocationPermissionAutomatically()
+      requestPermission: requestPermissionExplicit === null
+        ? shouldRequestWorkLocationPermissionAutomatically()
+        : requestPermissionExplicit,
+      forcePrompt
     }).catch(() => {});
     return;
   }
@@ -34143,11 +36807,20 @@ const replayIntroFromHelp = () => {
   closeGlobalHelpModal();
   openAppIntro({ force: true, reset: true });
 };
+const startInteractiveGuideFromHelpModal = () => {
+  startInteractiveGuideFromHelp();
+};
 if (elements.globalHelpReplayIntroBtn) {
   elements.globalHelpReplayIntroBtn.addEventListener('click', replayIntroFromHelp);
 }
 if (elements.globalHelpReplayIntroTopBtn) {
   elements.globalHelpReplayIntroTopBtn.addEventListener('click', replayIntroFromHelp);
+}
+if (elements.globalHelpStartInteractiveGuideBtn) {
+  elements.globalHelpStartInteractiveGuideBtn.addEventListener('click', startInteractiveGuideFromHelpModal);
+}
+if (elements.appIntroStartInteractiveGuideBtn) {
+  elements.appIntroStartInteractiveGuideBtn.addEventListener('click', startInteractiveGuideFromIntro);
 }
 if (elements.appIntroSkipBtn) {
   elements.appIntroSkipBtn.addEventListener('click', () => closeAppIntro({ markSeen: true }));
@@ -34861,14 +37534,14 @@ if (elements.drawerAlarmMusicPickBtn) elements.drawerAlarmMusicPickBtn.addEventL
   elements.alarmMusicInput?.click();
 });
 if (elements.alarmMusicClearBtn) elements.alarmMusicClearBtn.addEventListener('click', () => {
-  if (!String(oracleAlarmCustomAudioDataUrl || '').trim()) {
+  if (!String(oracleAlarmCustomAudioDataUrl || '').trim() && !String(oracleAlarmSessionAudioUrl || '').trim()) {
     showToast('ℹ️ O alarme já está usando o som padrão.');
     return;
   }
   clearOracleAlarmCustomAudioPreference();
 });
 if (elements.drawerAlarmMusicClearBtn) elements.drawerAlarmMusicClearBtn.addEventListener('click', () => {
-  if (!String(oracleAlarmCustomAudioDataUrl || '').trim()) {
+  if (!String(oracleAlarmCustomAudioDataUrl || '').trim() && !String(oracleAlarmSessionAudioUrl || '').trim()) {
     showToast('ℹ️ O alarme já está usando o som padrão.');
     return;
   }
@@ -35492,6 +38165,14 @@ const OracleMemory = {
       mem.facts.push({ text: fact, category, date: new Date().toISOString() });
       if (mem.facts.length > 100) mem.facts.shift();
       this.save(mem);
+      try {
+        if (String(category || '').trim().toLowerCase() !== 'community') {
+          enqueueKnowledgeAutoShare({
+            text: fact,
+            category
+          });
+        }
+      } catch (e) {}
       return true;
     }
     return false;
@@ -37875,6 +40556,7 @@ const OracleChat = {
   pdfViewCacheLimit: 6,
   _pdfViewCache: new Map(),
   _pdfViewerModalId: 'oraclePdfViewerModal',
+  capabilityGuideState: null,
 
   enqueueMessage(text, meta = {}) {
     const normalized = String(text || '').trim();
@@ -39053,6 +41735,13 @@ const OracleChat = {
     // Input (Enter)
     const input = document.getElementById('chatInput');
     if (input) {
+      const draft = loadOracleChatInputDraft();
+      if (draft && !String(input.value || '').trim()) {
+        input.value = draft;
+      }
+      input.addEventListener('input', () => {
+        saveOracleChatInputDraft(input.value || '');
+      });
       input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') this.processMessage();
       });
@@ -39194,11 +41883,15 @@ const OracleChat = {
     document.querySelectorAll('.oracle-quick-btn').forEach(btn => {
       const action = String(btn?.dataset?.action || '').trim();
       if (!action) return;
-      btn.addEventListener('click', () => this.handleQuickAction(action));
+      if (btn.dataset.oracleQuickBound === '1') return;
+      btn.dataset.oracleQuickBound = '1';
+      btn.addEventListener('click', () => this.handleQuickAction(action, { source: 'quick-btn' }));
     });
     document.querySelectorAll('.oracle-capability-card').forEach(card => {
+      if (card.dataset.oracleCardBound === '1') return;
+      card.dataset.oracleCardBound = '1';
       card.addEventListener('click', () => {
-        this.handleQuickAction(card.dataset.action);
+        this.handleQuickAction(card.dataset.action, { source: 'capability-card' });
         if (window.matchMedia('(max-width: 900px)').matches) {
           setCardsCollapsed(true, true);
         }
@@ -40513,13 +43206,321 @@ const OracleChat = {
     const name = String(selected?.name || selected?.filename || 'Agente').trim() || 'Agente';
     addBotMessage(`🧬 Agente ativo: <strong>${this.escapeOracleHtml(name)}</strong>.`);
   },
+
+  getCapabilityGuideConfig() {
+    return {
+      alarm: {
+        icon: '⏰',
+        title: 'Alarmes',
+        description: 'Aprenda a criar e testar alarmes no próprio assistente.',
+        testCommand: 'criar alarme em 1 minuto'
+      },
+      tasks: {
+        icon: '✅',
+        title: 'Tarefas',
+        description: 'Veja tarefas do dia e pratique comando de produtividade.',
+        testCommand: 'quais são minhas tarefas?',
+        openSection: 'tasks'
+      },
+      finance: {
+        icon: '💰',
+        title: 'Finanças',
+        description: 'Abra o painel financeiro e teste um comando de resumo.',
+        testCommand: 'ajuda financeira',
+        openSection: 'finance'
+      },
+      work: {
+        icon: '🧰',
+        title: 'Trabalho',
+        description: 'Acesse a área de trabalho e valide o status atual.',
+        testCommand: 'status do trabalho',
+        openSection: 'work'
+      },
+      bible: {
+        icon: '✝️',
+        title: 'Bíblia',
+        description: 'Abra a Bíblia e experimente um comando rápido.',
+        testCommand: 'abrir bíblia',
+        openSection: 'bible'
+      },
+      room: {
+        icon: '💬',
+        title: 'Sala',
+        description: 'Treine o acesso ao chat/sala social com um toque.',
+        testCommand: 'abrir sala',
+        openSection: 'room'
+      },
+      poker: {
+        icon: '🃏',
+        title: 'Poker',
+        description: 'Entre no modo de jogo e teste abertura da mesa.',
+        testCommand: 'abrir poker',
+        openTabs: ['arena', 'poker']
+      },
+      plan: {
+        icon: '📅',
+        title: 'Planejamento',
+        description: 'Entenda como listar e acompanhar pendências da semana.',
+        testCommand: 'planejamento da semana'
+      },
+      status: {
+        icon: '📊',
+        title: 'Status',
+        description: 'Veja o resumo geral de progresso e evolução.',
+        testCommand: 'qual meu status atual?'
+      },
+      help: {
+        icon: '🧠',
+        title: 'Ajuda',
+        description: 'Revise os comandos mais importantes do app.',
+        testCommand: 'ajuda'
+      }
+    };
+  },
+
+  getCapabilityGuideOrder() {
+    return ['alarm', 'tasks', 'finance', 'work', 'bible', 'room', 'poker', 'plan', 'status', 'help'];
+  },
+
+  startCapabilityGuide(startAction = '') {
+    const config = this.getCapabilityGuideConfig();
+    const order = this.getCapabilityGuideOrder().filter((item) => !!config[item]);
+    if (!order.length) return;
+
+    const normalizedStart = String(startAction || '').trim().toLowerCase();
+    const startIndex = Math.max(0, order.indexOf(normalizedStart));
+    this.capabilityGuideState = {
+      order,
+      index: startIndex >= 0 ? startIndex : 0,
+      tested: {}
+    };
+    this.showCapabilityGuideStep({ intro: true });
+  },
+
+  closeCapabilityGuide(showMessage = true) {
+    this.capabilityGuideState = null;
+    if (showMessage) {
+      addBotMessage('🧭 Guia encerrado. Quando quiser, toque em <strong>Guia</strong> ou em um card de recurso para começar de novo.');
+    }
+  },
+
+  moveCapabilityGuide(stepDelta = 1) {
+    const state = this.capabilityGuideState;
+    if (!state || !Array.isArray(state.order) || !state.order.length) return;
+    const maxIndex = state.order.length - 1;
+    const nextIndex = Math.min(maxIndex, Math.max(0, Number(state.index || 0) + Number(stepDelta || 0)));
+    state.index = nextIndex;
+    this.showCapabilityGuideStep();
+  },
+
+  runCapabilityGuideStep(actionKey = '') {
+    const config = this.getCapabilityGuideConfig();
+    const state = this.capabilityGuideState;
+    const key = String(actionKey || '').trim().toLowerCase() || String(state?.order?.[state?.index] || '').trim().toLowerCase();
+    const step = config[key];
+    if (!step || !state) return;
+
+    state.tested[key] = true;
+
+    let opened = false;
+    if (Array.isArray(step.openTabs)) {
+      for (const tabId of step.openTabs) {
+        if (this.openTabFromOracle(tabId)) {
+          opened = true;
+          break;
+        }
+      }
+    }
+    if (!opened && step.openSection) {
+      opened = this.openSectionFromOracle(step.openSection);
+    }
+
+    const command = String(step.testCommand || '').trim();
+    if (command) {
+      this.processMessage(command);
+    } else if (opened) {
+      addBotMessage(`✅ ${this.escapeOracleHtml(step.title)} aberto com sucesso.`);
+    } else {
+      addBotMessage(`✅ Passo de <strong>${this.escapeOracleHtml(step.title)}</strong> marcado como testado.`);
+    }
+
+    setTimeout(() => {
+      if (this.capabilityGuideState) this.showCapabilityGuideStep({ afterTest: true });
+    }, 240);
+  },
+
+  showCapabilityGuideStep(options = {}) {
+    const state = this.capabilityGuideState;
+    if (!state || !Array.isArray(state.order) || !state.order.length) return;
+
+    const config = this.getCapabilityGuideConfig();
+    const index = Math.max(0, Math.min(state.order.length - 1, Number(state.index || 0)));
+    state.index = index;
+
+    const actionKey = state.order[index];
+    const step = config[actionKey];
+    if (!step) return;
+
+    const total = state.order.length;
+    const tested = !!state.tested[actionKey];
+    const commandPreview = String(step.testCommand || '').trim();
+    const introText = options?.intro
+      ? '🚀 <strong>Guia passo a passo ativado.</strong> Vamos praticar cada recurso com cliques.'
+      : '';
+
+    let message = '';
+    if (introText) message += `${introText}<br><br>`;
+    message += `🧭 <strong>Passo ${index + 1} de ${total}</strong><br>`;
+    message += `<strong>${step.icon} ${this.escapeOracleHtml(step.title)}</strong><br>`;
+    message += `${this.escapeOracleHtml(step.description)}<br>`;
+    if (commandPreview) {
+      message += `<br><small>Comando de teste:</small><br><code>${this.escapeOracleHtml(commandPreview)}</code>`;
+    }
+    if (tested) {
+      message += '<br><br>✅ <strong>Teste concluído.</strong> Você já pode avançar para o próximo passo.';
+    } else {
+      message += '<br><br>Toque em <strong>Testar agora</strong> para liberar o próximo passo.';
+    }
+
+    const actions = [];
+    if (index > 0) {
+      actions.push({
+        text: '⬅️ Passo anterior',
+        description: 'Voltar para revisar o recurso anterior',
+        variant: 'card',
+        action: () => this.moveCapabilityGuide(-1)
+      });
+    }
+    actions.push({
+      text: tested ? '🔁 Testar novamente' : '▶️ Testar agora',
+      description: 'Executar este passo no app',
+      variant: 'card',
+      action: () => this.runCapabilityGuideStep(actionKey)
+    });
+    if (tested && index < total - 1) {
+      actions.push({
+        text: '➡️ Próximo passo',
+        description: 'Avançar para o próximo recurso',
+        variant: 'card',
+        action: () => this.moveCapabilityGuide(1)
+      });
+    }
+    if (tested && index === total - 1) {
+      actions.push({
+        text: '🏁 Finalizar guia',
+        description: 'Encerrar o treinamento guiado',
+        variant: 'card',
+        action: () => this.closeCapabilityGuide(true)
+      });
+    }
+    actions.push({
+      text: '❌ Sair guia',
+      description: 'Fechar o passo a passo agora',
+      variant: 'card',
+      action: () => this.closeCapabilityGuide(true)
+    });
+
+    addBotMessage(message, actions);
+  },
+
+  runCapabilityCardAction(action = '') {
+    const key = String(action || '').trim().toLowerCase();
+    if (!key) return false;
+
+    const openSection = (section, label) => {
+      const opened = this.openSectionFromOracle(section);
+      addBotMessage(opened ? `✅ ${this.escapeOracleHtml(label)} aberto.` : `⚠️ Não consegui abrir ${this.escapeOracleHtml(label)} agora.`);
+      return true;
+    };
+
+    switch (key) {
+      case 'alarm':
+        addBotMessage('⏰ Para criar alarme, diga: <code>criar alarme em 5 minutos</code> ou <code>alarme para 07:00</code>.');
+        return true;
+      case 'tasks':
+        return openSection('tasks', 'Tarefas');
+      case 'finance':
+        return openSection('finance', 'Finanças');
+      case 'work':
+        return openSection('work', 'Trabalho');
+      case 'bible':
+        return openSection('bible', 'Bíblia');
+      case 'room':
+        return openSection('room', 'Sala');
+      case 'poker': {
+        const opened = this.openTabFromOracle('arena');
+        addBotMessage(opened ? '✅ Poker aberto.' : '⚠️ Não consegui abrir o Poker agora.');
+        return true;
+      }
+      case 'plan':
+        this.openSectionFromOracle('tasks');
+        addBotMessage('📅 Planejamento fica na área de tarefas. Abra missões da semana para organizar o dia.');
+        return true;
+      case 'status':
+        this.showUserProfile();
+        return true;
+      case 'help':
+        addBotMessage('🧠 Dica: toque em <strong>Guia</strong> para passo a passo, ou use comandos como <code>abrir sala</code>, <code>ajuda financeira</code> e <code>criar alarme em 5 minutos</code>.');
+        return true;
+      case 'knowledge': {
+        const summary = formatKnowledgeNetworkSummary(8);
+        addBotMessage(summary, [
+          {
+            text: '🌐 Compartilhar',
+            action: () => {
+              const input = document.getElementById('chatInput');
+              if (input) {
+                input.value = 'rede: ';
+                input.focus();
+                if (typeof input.setSelectionRange === 'function') {
+                  const end = input.value.length;
+                  input.setSelectionRange(end, end);
+                }
+              }
+            }
+          },
+          {
+            text: '📥 Importar',
+            action: () => {
+              const out = importKnowledgeFromNetworkToOracle({ limit: 80 });
+              addBotMessage(`📥 Importei ${out.imported} conhecimento(s) da rede para sua memória local.`);
+            }
+          }
+        ]);
+        return true;
+      }
+      default:
+        return false;
+    }
+  },
   
-  handleQuickAction(action) {
+  handleQuickAction(action, options = {}) {
     const normalizedAction = String(action || '').trim().toLowerCase();
+    const source = String(options?.source || '').trim().toLowerCase();
+    if (normalizedAction === 'guide') {
+      this.startCapabilityGuide('alarm');
+      return;
+    }
+
+    // Em cards funcionais, executa o recurso direto sem prender no guia.
+    if (source === 'capability-card' && this.capabilityGuideState) {
+      this.capabilityGuideState = null;
+    }
+
+    if (source === 'capability-card') {
+      const handled = this.runCapabilityCardAction(normalizedAction);
+      if (handled) return;
+    }
 
     if (normalizedAction === 'pdf') {
       const result = this.promptPdfReadChoice('ler pdf', { showAction: true });
       if (result?.message) addBotMessage(result.message, result.actions || []);
+      return;
+    }
+
+    if (normalizedAction === 'knowledge') {
+      const summary = formatKnowledgeNetworkSummary(8);
+      addBotMessage(summary);
       return;
     }
 
@@ -40565,6 +43566,7 @@ const OracleChat = {
       plan: 'planejamento da semana',
       zen: 'abrir modo zen',
       agent: 'criar agente',
+      knowledge: 'mostrar conhecimentos da rede',
       help: 'ajuda'
     };
     
@@ -42175,7 +45177,10 @@ const OracleChat = {
 
     if (this.isProcessingMessage) {
       this.enqueueMessage(text, { fromVoice });
-      if (forcedText == null && input) input.value = '';
+      if (forcedText == null && input) {
+        input.value = '';
+        saveOracleChatInputDraft('');
+      }
 
       const now = Date.now();
       if (now - this._lastBusyNoticeAt > 2500) {
@@ -42194,7 +45199,10 @@ const OracleChat = {
     }
 
     addUserMessage(text);
-    if (forcedText == null && input) input.value = '';
+    if (forcedText == null && input) {
+      input.value = '';
+      saveOracleChatInputDraft('');
+    }
     showThinking();
 
     try {
@@ -42427,6 +45435,23 @@ const OracleChat = {
     if (wasPolite) {
       OracleMemory.setProfile('isPolite', true);
     }
+
+    if (shouldTryAssistantKnowledgeBaseLookup(lowerInput)) {
+      try {
+        const kbMatches = await getAssistantKnowledgeMatches(cleanedInput || input, { limit: 3 });
+        if (Array.isArray(kbMatches) && kbMatches.length) {
+          const topScore = Number(kbMatches[0]?.score || 0) || 0;
+          const tokenCount = getKnowledgeLookupTokens(cleanedInput || input, { minLen: 2, maxTokens: 24 }).length;
+          const minScore = tokenCount <= 3 ? 4 : 5;
+          if (topScore >= minScore) {
+            const kbReply = buildAssistantKnowledgeReply(kbMatches);
+            if (kbReply) return kbReply;
+          }
+        }
+      } catch (error) {
+        console.warn('Falha na consulta da base de conhecimento do assistente:', error);
+      }
+    }
     
     // --- HÍBRIDO: tentativa rápida com RAG/LLM antes do fluxo antigo
     try {
@@ -42487,7 +45512,29 @@ const OracleChat = {
         }
 
         if (result.reply && result.confidence >= 0.6) {
-          return { message: result.reply, actions: [] };
+          const blockedReplyPatterns = [
+            'modo offline local',
+            'modo local/offline',
+            'modo local de contingencia',
+            'modo local de contingência',
+            'diagnóstico de contingência',
+            'diagnostico de contingencia',
+            'plugin_nativo_indisponivel'
+          ];
+          const normalizedReply = String(result.reply || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          const shouldSuppressReply = blockedReplyPatterns.some((pattern) =>
+            normalizedReply.includes(String(pattern).normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+          );
+          if (!shouldSuppressReply) {
+            return { message: result.reply, actions: [] };
+          }
+          window.OracleTelemetry?.log('offline_reply_suppressed', {
+            intent: result.intent,
+            confidence: result.confidence
+          });
         }
         if (result.intent === 'desconhecido') {
           window.OracleTelemetry?.log('fallback', { text: String(input).slice(0,80) });
@@ -42791,6 +45838,21 @@ const OracleChat = {
   // === SISTEMA DE EDUCAÇÃO FINANCEIRA ===
   handleFinanceEducation(lowerInput) {
     const name = OracleMemory.getProfile('name') || 'amigo';
+
+    const parsedRule = parseFinanceSalaryRuleFromText(lowerInput);
+    if (
+      parsedRule &&
+      lowerInput.match(/regra|sal[aá]rio|salario|divis[aã]o|divisao|percentual|porcentagem|30\/30\/40/i)
+    ) {
+      return this.setSalaryRuleAndExplain(parsedRule.normalized, {
+        originalTotal: parsedRule.total,
+        rawInput: lowerInput
+      });
+    }
+
+    if (lowerInput.match(/regra\s+(?:de\s+)?sal[aá]rio|regra\s+salarial|divis[aã]o\s+do\s+sal[aá]rio|divisao\s+do\s+salario|aplicar\s+regra|planejamento\s+salarial|30\/30\/40/i)) {
+      return this.calculateSalaryRulePlan(lowerInput);
+    }
     
     // Dicas financeiras
     if (lowerInput.match(/dica|conselho|sugestão|como\s+(economizar|poupar|investir|ganhar|guardar|juntar)/i)) {
@@ -42823,6 +45885,113 @@ const OracleChat = {
     }
     
     return null;
+  },
+
+  setSalaryRuleAndExplain(parts = DEFAULT_FINANCE_SALARY_RULE_PARTS, options = {}) {
+    const name = OracleMemory.getProfile('name') || 'amigo';
+    const normalized = normalizeFinanceSalaryRuleParts(parts, DEFAULT_FINANCE_SALARY_RULE_PARTS);
+    const saved = saveFinanceSalaryRuleState(normalized, 'assistant_finance_rule');
+    try {
+      const ruleText = formatFinanceSalaryRuleParts(normalized);
+      if (typeof OracleMemory !== 'undefined' && OracleMemory && typeof OracleMemory.learn === 'function') {
+        OracleMemory.learn(`Regra salarial preferida: ${ruleText}`, 'finance_rule');
+      }
+    } catch (e) {}
+
+    const [needs, lifestyle, future] = normalized;
+    const totalInfo = Number(options?.originalTotal || 0) || 0;
+    const normalizedHint = totalInfo > 0 && totalInfo !== 100
+      ? `<br><small>ℹ️ Os valores informados somavam ${totalInfo}%. Normalizei para <strong>${formatFinanceSalaryRuleParts(normalized)}</strong>.</small>`
+      : '';
+
+    return {
+      message: `✅ Regra salarial salva, ${name}!<br><br>` +
+        `<strong>Regra ativa:</strong> <code>${formatFinanceSalaryRuleParts(normalized)}</code><br>` +
+        `• <strong>${needs}%</strong> Necessidades<br>` +
+        `• <strong>${lifestyle}%</strong> Estilo de vida<br>` +
+        `• <strong>${future}%</strong> Futuro (reserva/investimentos)` +
+        normalizedHint,
+      actions: [
+        { text: '🧮 Calcular com meus dados', action: () => addBotMessage(this.calculateSalaryRulePlan('calcular regra salarial')) },
+        { text: '💸 Informar salário manual', action: () => { this.pendingAction = { type: 'salary_rule_base_value' }; addBotMessage('Perfeito. Qual valor de salário devo usar para calcular?'); } }
+      ]
+    };
+  },
+
+  getSalaryRuleSummaryLine() {
+    const safeRule = normalizeFinanceSalaryRuleState(gameState?.financeSalaryRule || null);
+    return formatFinanceSalaryRuleParts(safeRule.parts);
+  },
+
+  extractSalaryBaseValueFromInput(input = '') {
+    const safe = String(input || '').trim();
+    if (!safe) return 0;
+    const match = safe.match(/(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)/i);
+    if (!match) return 0;
+    const parsed = parseMoney(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  },
+
+  calculateSalaryRulePlan(input = '', manualBaseValue = 0) {
+    const name = OracleMemory.getProfile('name') || 'amigo';
+    const safeRule = normalizeFinanceSalaryRuleState(gameState?.financeSalaryRule || null);
+    const [needsPct, lifestylePct, futurePct] = safeRule.parts;
+
+    let baseSalary = Number(manualBaseValue || 0) || 0;
+    let sourceLabel = '';
+
+    if (!(baseSalary > 0)) {
+      baseSalary = this.extractSalaryBaseValueFromInput(input);
+      if (baseSalary > 0) sourceLabel = 'valor informado no chat';
+    }
+
+    const snapshot = this.getFinanceSnapshot('currentMonth');
+    if (!(baseSalary > 0) && snapshot?.income > 0) {
+      baseSalary = Number(snapshot.income || 0) || 0;
+      sourceLabel = 'entradas do mês atual';
+    }
+
+    if (!(baseSalary > 0)) {
+      this.pendingAction = { type: 'salary_rule_base_value' };
+      return {
+        message: `🧮 Posso calcular sua regra <code>${formatFinanceSalaryRuleParts(safeRule.parts)}</code>, ${name}.<br><br>` +
+          `Não encontrei salário suficiente nos lançamentos deste mês.<br>` +
+          `Me informe o valor base (ex: <strong>3500</strong>) para eu montar o plano.`,
+        actions: [
+          { text: 'Usar 3000', action: () => { this.pendingAction = null; addBotMessage(this.calculateSalaryRulePlan('', 3000)); } },
+          { text: 'Usar 4000', action: () => { this.pendingAction = null; addBotMessage(this.calculateSalaryRulePlan('', 4000)); } }
+        ]
+      };
+    }
+
+    const needsValue = (baseSalary * needsPct) / 100;
+    const lifestyleValue = (baseSalary * lifestylePct) / 100;
+    const futureValue = (baseSalary * futurePct) / 100;
+    const totalAllocated = needsValue + lifestyleValue + futureValue;
+    const expenses = Number(snapshot?.expenses || 0) || 0;
+    const diffVsNeeds = needsValue - expenses;
+    const safetyHint = expenses > 0
+      ? (diffVsNeeds >= 0
+        ? `✅ Seus gastos do mês (R$ ${expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) cabem no bloco de necessidades.`
+        : `⚠️ Seus gastos do mês passaram o bloco de necessidades em R$ ${Math.abs(diffVsNeeds).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`)
+      : 'ℹ️ Registre saídas no financeiro para eu comparar automaticamente seus gastos com a regra.';
+
+    const sourceText = sourceLabel ? `<small>Base usada: ${sourceLabel}.</small><br>` : '';
+
+    return {
+      message: `💰 <strong>Planejamento salarial (${formatFinanceSalaryRuleParts(safeRule.parts)})</strong><br><br>` +
+        sourceText +
+        `Salário base: <strong>R$ ${baseSalary.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><br><br>` +
+        `• Necessidades (${needsPct}%): <strong>R$ ${needsValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><br>` +
+        `• Estilo de vida (${lifestylePct}%): <strong>R$ ${lifestyleValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><br>` +
+        `• Futuro (${futurePct}%): <strong>R$ ${futureValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><br><br>` +
+        `Total planejado: <strong>R$ ${totalAllocated.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><br><br>` +
+        `${safetyHint}`,
+      actions: [
+        { text: '✏️ Trocar regra', action: () => addBotMessage('Me diga a nova regra em formato 3 partes. Ex: 40/30/30.') },
+        { text: '📊 Ver resumo financeiro', action: () => addBotMessage(this.getFinanceSummary()) }
+      ]
+    };
   },
   
   getFinancialTip() {
@@ -43804,6 +46973,14 @@ const OracleChat = {
             { text: '📈 Investimento', action: () => { this.pendingAction = null; this.clearShortTermContext('awaiting_income_description'); addBotMessage(addIncome(incomeValue, 'Investimento')); } }
           ]
         };
+
+      case 'salary_rule_base_value':
+        const salaryBaseValue = parseMoney(input);
+        if (isNaN(salaryBaseValue) || salaryBaseValue <= 0) {
+          return 'Me passe um valor válido de salário. Exemplo: 3500 ou 4200,50.';
+        }
+        this.pendingAction = null;
+        return this.calculateSalaryRulePlan('', salaryBaseValue);
 
       case 'expense_description':
         // Usuário está dando a descrição para o gasto
@@ -44804,6 +47981,7 @@ const OracleChat = {
   },
   
   handleInfoQueries(lowerInput) {
+    const normalizedInput = normalizeKnowledgeLookupText(lowerInput);
     // STATUS/XP
     if (lowerInput.match(/(status|xp|nível|nivel|experiência|level)/i)) {
       if (!gameState) return "Não consegui acessar seus dados. Tente recarregar a página.";
@@ -44820,16 +47998,16 @@ const OracleChat = {
     }
     
     // FINANÇAS/SALDO
-    if (lowerInput.match(/(saldo|dinheiro|finança|financeiro|grana|quanto tenho)/i)) {
+    if (/(saldo|dinheiro|grana|quanto tenho|financ|receita|despesa|gasto|gastos|parcela|parcelado)/.test(normalizedInput)) {
       if (!gameState) return "Não consegui acessar seus dados.";
 
-      const transactions = Array.isArray(gameState.finances) ? gameState.finances : [];
-      let income = 0, expense = 0;
-      transactions.forEach(t => {
-        if (t.type === 'income') income += t.value;
-        else expense += t.value;
-      });
-      const balance = income - expense;
+      const financeCtx = getAssistantFinanceMonthContext();
+      const transactions = Array.isArray(financeCtx.transactions) ? financeCtx.transactions : [];
+      const monthSummary = financeCtx.monthSummary || { income: 0, expense: 0, monthNet: 0, closingBalance: 0 };
+      const income = Number(monthSummary.income || 0);
+      const expense = Number(monthSummary.expense || 0);
+      const balance = Number(monthSummary.monthNet || 0);
+      const accumulated = Number(monthSummary.closingBalance || 0);
       const emoji = balance >= 0 ? '💰' : '⚠️';
 
       if (!transactions.length) {
@@ -44860,11 +48038,12 @@ const OracleChat = {
         } catch (e) {}
       }
       
-      return `<strong>${emoji} Resumo Financeiro:</strong><br><br>
+      return `<strong>${emoji} Resumo Financeiro (${financeCtx.monthLabel}):</strong><br><br>
         📈 Entradas: <span style="color:#4ade80">R$ ${income.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span><br>
         📉 Saídas: <span style="color:#f87171">R$ ${expense.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span><br>
-        💵 <strong>Saldo: R$ ${balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong><br><br>
-        ${balance >= 0 ? 'Suas finanças estão no verde! 🎉' : 'Atenção com os gastos! 🧐'}`;
+        💵 <strong>Saldo do mês: R$ ${balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong><br>
+        🧾 Saldo acumulado até este mês: <strong>R$ ${accumulated.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong><br><br>
+        ${balance >= 0 ? 'Suas finanças do mês estão no verde! 🎉' : 'Atenção com os gastos deste mês! 🧐'}`;
     }
     
     // TAREFAS
@@ -44938,6 +48117,39 @@ const OracleChat = {
   },
   
   async handleMemoryCommands(lowerInput, originalInput) {
+    const shareReq = parseKnowledgeShareRequest(originalInput);
+    if (shareReq) {
+      if (!shareReq.text) {
+        return '🌐 Digite o conhecimento depois de <code>rede:</code><br>Exemplo: <code>rede: separar metas financeiras por semana ajuda a manter foco</code>';
+      }
+      try {
+        const sent = await shareKnowledgeWithNetwork(shareReq.text, { parsed: shareReq });
+        if (!sent) {
+          return '⚠️ Não consegui compartilhar agora. Tente novamente em instantes.';
+        }
+        const tags = Array.isArray(sent.tags) && sent.tags.length ? ` #${sent.tags.join(' #')}` : '';
+        return `✅ Conhecimento compartilhado com a rede:<br><strong>${this.escapeOracleHtml(sent.text)}</strong>${this.escapeOracleHtml(tags)}`;
+      } catch (e) {
+        const msg = String(e?.message || '').trim();
+        return msg ? `⚠️ ${this.escapeOracleHtml(msg)}` : '⚠️ Não consegui compartilhar agora.';
+      }
+    }
+
+    if (
+      /(mostrar|listar|ver|exibir).*(conhecimentos?|rede)/i.test(lowerInput) ||
+      /(conhecimentos?\s+da\s+rede|rede\s+de\s+conhecimento)/i.test(lowerInput)
+    ) {
+      return formatKnowledgeNetworkSummary(8);
+    }
+
+    if (/(importar|sincronizar|atualizar).*(conhecimentos?|rede)/i.test(lowerInput)) {
+      const out = importKnowledgeFromNetworkToOracle({ limit: 120 });
+      if (!out.total) {
+        return 'ℹ️ Ainda não há conhecimento compartilhado para importar.';
+      }
+      return `📥 Importação concluída: ${out.imported} novo(s) de ${out.total} registro(s) da rede.`;
+    }
+
     // APRENDER/LEMBRAR
     if (lowerInput.startsWith('lembre') || lowerInput.startsWith('lembra')) {
       const fact = originalInput.replace(/^lembr[ae]/i, '').replace(/^(que|de|:)/i, '').trim();
@@ -45575,6 +48787,8 @@ const OracleChat = {
       <strong>Atalhos úteis:</strong><br>
       • "gastei 50 no almoço"<br>
       • "criar tarefa estudar"<br>
+      • "regra salário 30/30/40"<br>
+      • "calcular regra salarial"<br>
       • "criar alarme em 5 minutos"`;
   },
 
@@ -45585,6 +48799,7 @@ const OracleChat = {
       actions: [
         { text: '📝 Registrar gasto', action: () => { this.pendingAction = { type: 'expense_amount' }; addBotMessage('Certo — qual o valor do gasto? (ex: 50 ou 12,50)'); } },
         { text: '💸 Registrar receita', action: () => { this.pendingAction = { type: 'income_amount' }; addBotMessage('Beleza — qual o valor da entrada?'); } },
+        { text: '🧮 Regra salarial', action: () => { this.pendingAction = null; addBotMessage(this.calculateSalaryRulePlan('regra salarial')); } },
         { text: '🎯 Criar meta', action: () => { this.pendingAction = null; addBotMessage(this.createFinancialGoal()); } },
         { text: '📊 Analisar gastos', action: () => { this.pendingAction = null; addBotMessage(this.analyzeSpending()); } },
         { text: '💡 Dicas práticas', action: () => { this.pendingAction = null; addBotMessage(this.getFinancialTip()); } }
@@ -45694,7 +48909,13 @@ const OracleChat = {
         'nao consegui gerar resposta',
         'não consegui gerar resposta',
         'plugin de llm local nao encontrado',
-        'plugin de llm local não encontrado'
+        'plugin de llm local não encontrado',
+        'modo offline local',
+        'modo local/offline',
+        'modo local de contingencia',
+        'modo local de contingência',
+        'diagnóstico de contingência',
+        'plugin_nativo_indisponivel'
       ];
       if (blockedPatterns.some((pattern) => normalized.includes(pattern))) {
         return '';
@@ -47576,6 +50797,591 @@ esperanca: {
       .trim();
   },
 
+  fixMojibake(text = "") {
+    const input = String(text || "");
+    if (!input) return "";
+    if (!/[ÃÂ]/.test(input)) return input;
+    try {
+      const bytes = Uint8Array.from(Array.from(input).map((char) => char.charCodeAt(0) & 0xff));
+      const decoded = new TextDecoder("utf-8").decode(bytes);
+      if (decoded && /[áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ]/.test(decoded)) {
+        return decoded;
+      }
+    } catch (e) {
+      // fallback silencioso
+    }
+    return input;
+  },
+
+  async ensurePdfScriptData() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+
+    const existingData = window.BIBLIA_PDF_DATA;
+    if (existingData && Array.isArray(existingData.chunks) && existingData.chunks.length) {
+      return existingData;
+    }
+
+    if (!this._pdfScriptLoadPromise) {
+      this._pdfScriptLoadPromise = new Promise((resolve, reject) => {
+        const scriptId = 'bible-pdf-data-script';
+        let script = document.getElementById(scriptId);
+        const scriptSrc = 'biblia-pdf-data.js';
+        let timeoutHandle = null;
+
+        const clear = () => {
+          if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+            timeoutHandle = null;
+          }
+        };
+
+        const done = (ok, err = null) => {
+          clear();
+          if (ok) {
+            const loaded = window.BIBLIA_PDF_DATA;
+            if (loaded && Array.isArray(loaded.chunks) && loaded.chunks.length) {
+              resolve(loaded);
+              return;
+            }
+            reject(new Error('BIBLIA_PDF_DATA_EMPTY'));
+            return;
+          }
+          reject(err || new Error('BIBLIA_PDF_DATA_LOAD_ERROR'));
+        };
+
+        if (!script) {
+          script = document.createElement('script');
+          script.id = scriptId;
+          script.src = scriptSrc;
+          script.defer = true;
+          script.onload = () => done(true);
+          script.onerror = () => done(false, new Error('BIBLIA_PDF_DATA_LOAD_ERROR'));
+          document.head.appendChild(script);
+        } else {
+          if (window.BIBLIA_PDF_DATA && Array.isArray(window.BIBLIA_PDF_DATA.chunks) && window.BIBLIA_PDF_DATA.chunks.length) {
+            done(true);
+            return;
+          }
+          script.addEventListener('load', () => done(true), { once: true });
+          script.addEventListener('error', () => done(false, new Error('BIBLIA_PDF_DATA_LOAD_ERROR')), { once: true });
+        }
+
+        timeoutHandle = setTimeout(() => done(false, new Error('BIBLIA_PDF_DATA_TIMEOUT')), 20000);
+      });
+    }
+
+    try {
+      const data = await this._pdfScriptLoadPromise;
+      return data;
+    } catch (error) {
+      this.debug('Falha ao carregar biblia-pdf-data.js:', error);
+      return null;
+    } finally {
+      this._pdfScriptLoadPromise = null;
+    }
+  },
+
+  ensurePdfScriptIndex(data) {
+    const chunks = Array.isArray(data?.chunks) ? data.chunks : [];
+    if (!chunks.length) return null;
+
+    const key = `${String(data?.generatedAt || 'na')}:${chunks.length}`;
+    if (this._pdfScriptIndex && this._pdfScriptIndex.key === key) {
+      return this._pdfScriptIndex;
+    }
+
+    const normalizedChunks = chunks.map((chunk) => this.normalize(chunk));
+    this._pdfScriptIndex = {
+      key,
+      chunks,
+      normalizedChunks,
+      meta: {
+        sourcePdf: String(data?.sourcePdf || 'desconhecido'),
+        generatedAt: String(data?.generatedAt || ''),
+        chunkCount: chunks.length
+      }
+    };
+    return this._pdfScriptIndex;
+  },
+
+  extractScriptSearchTokens(queryNormalized = '') {
+    const stopWords = new Set([
+      'de', 'da', 'do', 'dos', 'das', 'para', 'por', 'com', 'sem', 'que', 'como',
+      'qual', 'quais', 'no', 'na', 'nos', 'nas', 'e', 'ou', 'em', 'um', 'uma',
+      'os', 'as', 'o', 'a', 'me', 'te', 'se', 'eu', 'voce', 'voces', 'ele', 'ela',
+      'eles', 'elas', 'sobre'
+    ]);
+
+    return String(queryNormalized || '')
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 3 && !stopWords.has(token))
+      .slice(0, 10);
+  },
+
+  resolvePdfBookNeedles(bookName = '', numPrefix = null) {
+    const needles = new Set();
+    const rawBook = String(bookName || '').trim();
+    const canonical = this.resolveBookName(rawBook) || this.normalize(rawBook);
+    if (!canonical) return [];
+
+    const addNeedle = (value) => {
+      const n = this.normalize(value);
+      if (n && n.length >= 2) {
+        needles.add(n);
+        needles.add(n.replace(/\s+/g, ''));
+      }
+    };
+
+    addNeedle(canonical);
+
+    const aliases = Array.isArray(this.bookAliases?.[canonical]) ? this.bookAliases[canonical] : [];
+    aliases.forEach((alias) => addNeedle(alias));
+
+    const prefix = String(numPrefix || '').trim();
+    const startsWithNumber = /^\d\s+/.test(canonical);
+    if (prefix && !startsWithNumber) {
+      addNeedle(`${prefix} ${canonical}`);
+      aliases.forEach((alias) => addNeedle(`${prefix} ${alias}`));
+    }
+
+    return Array.from(needles);
+  },
+
+  escapeRegexForSearch(value = '') {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  },
+
+  chunkHasSequence(normalizedChunk = '', sequence = '') {
+    const chunk = String(normalizedChunk || '').trim();
+    const seq = this.normalize(sequence);
+    if (!chunk || !seq) return false;
+
+    const compact = seq.replace(/\s+/g, ' ');
+    const withSpaces = compact.replace(/\s+/g, '\\s+');
+    const pattern = new RegExp(`(?:^|\\s)${this.escapeRegexForSearch(withSpaces).replace(/\\\\s\\\+/g, '\\s+')}(?:\\s|$)`, 'i');
+    if (pattern.test(chunk)) return true;
+
+    // fallback para casos tipo "3 joao 1:1" vs "3 joao 1 1" no PDF convertido
+    if (compact.includes(':')) {
+      const alt = compact.replace(/:/g, ' ');
+      const altSpaces = alt.replace(/\s+/g, '\\s+');
+      const altPattern = new RegExp(`(?:^|\\s)${this.escapeRegexForSearch(altSpaces).replace(/\\\\s\\\+/g, '\\s+')}(?:\\s|$)`, 'i');
+      return altPattern.test(chunk);
+    }
+
+    return false;
+  },
+
+  chunkHasNumberToken(normalizedChunk = '', numberValue = null) {
+    const value = Number(numberValue);
+    if (!Number.isFinite(value) || value <= 0) return false;
+    const chunk = String(normalizedChunk || '').trim();
+    if (!chunk) return false;
+    const pattern = new RegExp(`(?:^|\\s)${value}(?:\\s|$)`, 'i');
+    return pattern.test(chunk);
+  },
+
+  resolveReferenceBookName(bookInput = '', numPrefix = null) {
+    const rawBook = String(bookInput || '').trim();
+    if (!rawBook) return null;
+
+    const prefix = String(numPrefix || '').trim();
+    const candidates = [];
+    if (prefix) candidates.push(`${prefix} ${rawBook}`);
+    candidates.push(rawBook);
+
+    for (const candidate of candidates) {
+      const byDefaultResolver = this.resolveBookName(candidate);
+      if (byDefaultResolver) return byDefaultResolver;
+    }
+
+    const normalizedCandidates = candidates.map((c) => this.normalize(c)).filter(Boolean);
+    if (Array.isArray(BIBLE_BOOKS)) {
+      for (const book of BIBLE_BOOKS) {
+        const bookName = String(book?.name || '').trim();
+        if (!bookName) continue;
+        const normalizedBook = this.normalize(bookName);
+        if (normalizedCandidates.includes(normalizedBook)) {
+          return bookName.toLowerCase();
+        }
+      }
+    }
+
+    return null;
+  },
+
+  extractReferencePassageText(rawText = '', verseStart = null, verseEnd = null, context = null) {
+    const text = this.fixMojibake(String(rawText || '')).replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const maxPassageLength = 5000;
+
+    const fromVerse = Number(verseStart || 0);
+    const toVerseRaw = Number(verseEnd || 0);
+    const toVerse = Number.isFinite(toVerseRaw) && toVerseRaw >= fromVerse ? toVerseRaw : fromVerse;
+    const singleVerse = Number.isFinite(fromVerse) && fromVerse > 0 && (!Number.isFinite(toVerseRaw) || toVerseRaw <= fromVerse);
+
+    let minStartIndex = 0;
+    try {
+      const refBook = String(context?.book || '').trim();
+      const refPrefix = String(context?.numPrefix || '').trim();
+      const refChapter = Number(context?.chapter || 0);
+      if (refBook && refChapter > 0) {
+        const bookCandidates = new Set();
+        const bookHasOwnPrefix = /^\d\s+/.test(this.normalize(refBook));
+        const baseBookLabel = this.titleCase(refBook);
+        const baseBookAscii = this.titleCase(this.normalize(refBook));
+
+        bookCandidates.add(baseBookLabel);
+        bookCandidates.add(baseBookAscii);
+        if (refPrefix && !bookHasOwnPrefix) {
+          bookCandidates.add(`${refPrefix} ${baseBookLabel}`);
+          bookCandidates.add(`${refPrefix} ${baseBookAscii}`);
+        }
+
+        for (const candidate of bookCandidates) {
+          const escaped = this.escapeRegexForSearch(candidate).replace(/\s+/g, '\\s+');
+          const re = new RegExp(`\\[?${escaped}\\]?\\s+${refChapter}\\b`, 'i');
+          const match = text.match(re);
+          if (match && Number.isFinite(match.index)) {
+            minStartIndex = Math.max(minStartIndex, Number(match.index) + String(match[0] || '').length);
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      // fallback silencioso
+    }
+
+    if (!Number.isFinite(fromVerse) || fromVerse <= 0) {
+      return text.slice(0, maxPassageLength).trim();
+    }
+
+    const markers = [];
+    const markerRegex = /\b(\d{1,3})\s/g;
+    let markerMatch;
+    while ((markerMatch = markerRegex.exec(text)) !== null) {
+      markers.push({ num: Number(markerMatch[1]), idx: markerMatch.index });
+    }
+    if (!markers.length) return text.slice(0, maxPassageLength).trim();
+
+    const startMarkerCandidates = markers.filter((m) => m.num === fromVerse && m.idx >= minStartIndex);
+    const startMarker = startMarkerCandidates.find((candidate) => {
+      const after = text.slice(candidate.idx + String(candidate.num).length + 1, candidate.idx + 90);
+      if (!after) return false;
+      if (/^[A-Z]{1,4}\./.test(after.trim())) return false;
+      if (/^[a-z]\s+(GEE|HEB|TJS|GR)\b/i.test(after.trim())) return false;
+      if (/^(GEE|HEB|TJS|GR)\b/i.test(after.trim())) return false;
+      return /[a-zà-ÿ]{3,}/i.test(after);
+    }) || startMarkerCandidates[0] || markers.find((m) => m.num === fromVerse);
+    if (!startMarker) return text.slice(0, maxPassageLength).trim();
+
+    let endIdx = Math.min(text.length, startMarker.idx + maxPassageLength);
+    let hasExplicitEnd = false;
+    if (Number.isFinite(toVerse) && toVerse >= fromVerse) {
+      const nextVerse = markers.find((m) => m.idx > startMarker.idx && m.num === (toVerse + 1));
+      if (nextVerse) {
+        endIdx = nextVerse.idx;
+        hasExplicitEnd = true;
+      } else {
+        const firstAfterRange = markers.find((m) => m.idx > startMarker.idx && m.num > toVerse);
+        if (firstAfterRange) {
+          endIdx = Math.min(firstAfterRange.idx, endIdx);
+          hasExplicitEnd = true;
+        }
+      }
+    }
+
+    const tailFromStart = text.slice(startMarker.idx);
+    const nextChapterMatch = tailFromStart.match(/\bCAP[IÍ]TULO\s+\d+\b/i);
+    if (nextChapterMatch && Number.isFinite(nextChapterMatch.index) && nextChapterMatch.index > 0) {
+      endIdx = Math.min(endIdx, startMarker.idx + Number(nextChapterMatch.index));
+      hasExplicitEnd = true;
+    }
+
+    if (singleVerse) {
+      let oneVerseBody = hasExplicitEnd
+        ? text.slice(startMarker.idx, endIdx).trim()
+        : text.slice(startMarker.idx).trim();
+      const referenceLabelNorm = this.normalize(`${String(context?.numPrefix || '').trim()} ${String(context?.book || '').trim()}`);
+      if (referenceLabelNorm.startsWith('3 joao')) {
+        const elderIdx = oneVerseBody.search(/\bO\s+ANCI/i);
+        if (elderIdx >= 0) {
+          oneVerseBody = oneVerseBody.slice(elderIdx).trim();
+        }
+      }
+
+      oneVerseBody = oneVerseBody
+        .replace(/^(?:(?:\d+\s+)?[a-z]\s+(?:GEE|HEB|TJS|GR)\b[^.]*\.\s*)+/i, '')
+        .replace(/^(?:\d+\s*[A-Za-zÀ-ÿ]{1,8}\.\s*\d+:\d+(?:\.\[[^\]]+\])?\s*)+/i, '')
+        .trim();
+
+      if (referenceLabelNorm.startsWith('3 joao') && !/^O\s+ANCI/i.test(oneVerseBody)) {
+        const elderIdx = oneVerseBody.search(/\bO\s+ANCI/i);
+        if (elderIdx >= 0) oneVerseBody = oneVerseBody.slice(elderIdx).trim();
+      }
+
+      const sentenceBreak = oneVerseBody.search(/[.!?]\s/);
+      if (sentenceBreak > 35) {
+        return oneVerseBody.slice(0, sentenceBreak + 1).trim();
+      }
+      return oneVerseBody.slice(0, 320).trim();
+    }
+
+    const selected = text.slice(startMarker.idx, endIdx).trim();
+    return selected || text.slice(startMarker.idx, Math.min(text.length, startMarker.idx + maxPassageLength)).trim();
+  },
+
+  formatReferencePassageText(text = '') {
+    const escaped = this.escapeHtml(this.fixMojibake(String(text || '').trim()));
+    if (!escaped) return '';
+    return escaped
+      .replace(/\s(\d{1,3})(?=\s)/g, '<br><strong>$1</strong>')
+      .replace(/^<br>/, '');
+  },
+
+  parseScriptReferenceRequest(input = '') {
+    const raw = String(input || '').trim();
+    if (!raw) return null;
+
+    const direct = this.parseReference(raw);
+    if (direct) {
+      return {
+        book: direct.book,
+        chapter: direct.chapter,
+        verseStart: direct.verseStart || null,
+        verseEnd: direct.verseEnd || null,
+        numPrefix: direct.numPrefix || null,
+        queryLabel: `${direct.numPrefix ? `${direct.numPrefix} ` : ''}${direct.book} ${direct.chapter}${direct.verseStart ? `:${direct.verseStart}${direct.verseEnd ? `-${direct.verseEnd}` : ''}` : ''}`,
+        fromDirectReference: true
+      };
+    }
+
+    const normalized = this.normalize(raw);
+    const patterns = [
+      /(?:capitulo|cap)\s+(\d{1,3})\s+(?:de|do|da)\s+(.+)$/i,
+      /(.+?)\s+(?:capitulo|cap)\s+(\d{1,3})$/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern);
+      if (!match) continue;
+      const chapter = Number(match[1] || match[2]);
+      const rawBook = String(match[2] || match[1] || '').trim();
+      if (!Number.isFinite(chapter) || chapter <= 0 || !rawBook) continue;
+
+      const book = this.resolveBookName(rawBook);
+      if (!book) continue;
+
+      return {
+        book,
+        chapter,
+        verseStart: null,
+        verseEnd: null,
+        numPrefix: null,
+        queryLabel: `${book} ${chapter}`,
+        fromDirectReference: false
+      };
+    }
+
+    return null;
+  },
+
+  async searchPdfScript(query, options = {}) {
+    const qRaw = String(query || '').trim();
+    const qNorm = this.normalize(qRaw);
+    if (!qNorm) return { matches: [], meta: null };
+
+    const data = await this.ensurePdfScriptData();
+    const index = this.ensurePdfScriptIndex(data);
+    if (!index) return { matches: [], meta: null };
+
+    const limit = Math.max(1, Math.min(5, Number(options.limit || 3) || 3));
+    const minScore = Math.max(1, Number(options.minScore || 3) || 3);
+    const tokens = this.extractScriptSearchTokens(qNorm);
+    const refObj = this.parseReference(qRaw);
+    const filterBook = this.resolveBookName(String(options.filterBook || refObj?.book || '').trim()) || '';
+    const filterChapter = (() => {
+      const candidate = Number(options.filterChapter || refObj?.chapter || 0);
+      return Number.isFinite(candidate) && candidate > 0 ? Math.floor(candidate) : null;
+    })();
+    const filterPrefix = String(options.filterPrefix || refObj?.numPrefix || '').trim() || null;
+    const filterVerseStart = (() => {
+      const candidate = Number(options.filterVerseStart || refObj?.verseStart || 0);
+      return Number.isFinite(candidate) && candidate > 0 ? Math.floor(candidate) : null;
+    })();
+    const filterVerseEnd = (() => {
+      const candidate = Number(options.filterVerseEnd || refObj?.verseEnd || 0);
+      return Number.isFinite(candidate) && candidate > 0 ? Math.floor(candidate) : null;
+    })();
+    const refNeedle = refObj
+      ? this.normalize(`${refObj.numPrefix ? `${refObj.numPrefix} ` : ''}${refObj.book} ${refObj.chapter}`)
+      : '';
+    const filterBookNeedles = filterBook ? this.resolvePdfBookNeedles(filterBook, filterPrefix).filter((needle) => needle && needle.length >= 3) : [];
+    const chapterNeedles = filterChapter
+      ? [`capitulo ${filterChapter}`, `cap ${filterChapter}`]
+      : [];
+    const referenceNeedles = (filterBook && filterChapter)
+      ? filterBookNeedles.map((bookNeedle) => `${bookNeedle} ${filterChapter}`)
+      : [];
+    const verseReferenceNeedles = (filterBook && filterChapter && filterVerseStart)
+      ? filterBookNeedles.flatMap((bookNeedle) => ([
+          `${bookNeedle} ${filterChapter} ${filterVerseStart}`,
+          `${bookNeedle} ${filterChapter}:${filterVerseStart}`
+        ]))
+      : [];
+
+    if (!tokens.length && !refNeedle && qNorm.length < 6) {
+      return { matches: [], meta: index.meta };
+    }
+
+    const results = [];
+    for (let i = 0; i < index.normalizedChunks.length; i += 1) {
+      const normalizedChunk = index.normalizedChunks[i] || '';
+      if (!normalizedChunk) continue;
+
+      let score = 0;
+      if (qNorm.length >= 7 && normalizedChunk.includes(qNorm)) score += 8;
+      if (refNeedle && normalizedChunk.includes(refNeedle)) score += 6;
+
+      const hasBookReference = filterBookNeedles.some((needle) => this.chunkHasSequence(normalizedChunk, needle));
+      const hasChapterReference = Boolean(filterChapter) && (
+        this.chunkHasNumberToken(normalizedChunk, filterChapter) ||
+        chapterNeedles.some((needle) => this.chunkHasSequence(normalizedChunk, needle)) ||
+        referenceNeedles.some((needle) => this.chunkHasSequence(normalizedChunk, needle))
+      );
+      const hasExactVerseReference = verseReferenceNeedles.some((needle) => this.chunkHasSequence(normalizedChunk, needle));
+      const hasVerseReference = Boolean(filterVerseStart) && (
+        this.chunkHasNumberToken(normalizedChunk, filterVerseStart) ||
+        hasExactVerseReference
+      );
+
+      if (filterBookNeedles.length) {
+        const hasBook = hasBookReference;
+        if (!hasBook && referenceNeedles.length) {
+          const hasReferenceNeedle = referenceNeedles.some((needle) => this.chunkHasSequence(normalizedChunk, needle));
+          if (!hasReferenceNeedle) continue;
+        } else if (!hasBook && !referenceNeedles.length) {
+          continue;
+        } else {
+          score += 4;
+        }
+      }
+
+      if (filterChapter) {
+        const hasChapter = hasChapterReference;
+        if (!hasChapter && filterBookNeedles.length) continue;
+        if (hasChapter) score += 3;
+      }
+
+      if (filterVerseStart) {
+        if (filterBookNeedles.length || filterChapter) {
+          // Para referência direta (livro + capítulo + verso), exige sequência exata.
+          if (!hasExactVerseReference) continue;
+          score += 18;
+        } else {
+          const hasVerse = hasVerseReference;
+          if (!hasVerse) continue;
+          score += 12;
+        }
+      }
+
+      if (hasExactVerseReference) {
+        score += 28;
+      } else if (referenceNeedles.some((needle) => this.chunkHasSequence(normalizedChunk, needle))) {
+        score += 12;
+      }
+
+      for (const token of tokens) {
+        if (!token || token.length < 3) continue;
+        const hasToken = token.length <= 4
+          ? this.chunkHasSequence(normalizedChunk, token)
+          : normalizedChunk.includes(token);
+        if (!hasToken) continue;
+        score += token.length >= 6 ? 2 : 1;
+      }
+
+      if (/(conteudo|abreviacoes|introducao)/.test(normalizedChunk)) {
+        score -= 2;
+      }
+
+      if (score < minScore) continue;
+
+      const rawChunk = this.fixMojibake(String(index.chunks[i] || '')).replace(/\s+/g, ' ').trim();
+      if (!rawChunk) continue;
+
+      results.push({
+        score,
+        chunkIndex: i + 1,
+        snippet: rawChunk.slice(0, 420),
+        rawText: rawChunk
+      });
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return {
+      matches: results.slice(0, limit),
+      meta: {
+        ...index.meta,
+        filterBook: filterBook || null,
+        filterChapter: filterChapter || null,
+        filterVerseStart: filterVerseStart || null,
+        filterVerseEnd: filterVerseEnd || null
+      }
+    };
+  },
+
+  formatPdfScriptResultBlock(query, payload = {}, reference = null) {
+    const matches = Array.isArray(payload?.matches) ? payload.matches : [];
+    if (!matches.length) return '';
+
+    const top = matches[0];
+    const refBook = String(reference?.book || payload?.meta?.filterBook || '').trim();
+    const refPrefix = String(reference?.numPrefix || '').trim();
+    const refChapter = Number(reference?.chapter || payload?.meta?.filterChapter || 0) || 0;
+    const refVerseStart = Number(reference?.verseStart || payload?.meta?.filterVerseStart || 0) || 0;
+    const refVerseEnd = Number(reference?.verseEnd || payload?.meta?.filterVerseEnd || 0) || 0;
+
+    const hasReference = Boolean(refBook && refChapter);
+    if (hasReference) {
+      const displayBook = `${refPrefix ? `${refPrefix} ` : ''}${this.titleCase(refBook)}`.trim();
+      const heading = `${displayBook} ${refChapter}${refVerseStart ? `:${refVerseStart}${refVerseEnd ? `-${refVerseEnd}` : ''}` : ''}`;
+      const passageRaw = this.extractReferencePassageText(
+        top.rawText || top.snippet || '',
+        refVerseStart || null,
+        refVerseEnd || null,
+        {
+          book: refBook,
+          numPrefix: refPrefix,
+          chapter: refChapter
+        }
+      );
+      const passageFormatted = this.formatReferencePassageText(passageRaw || top.snippet || '');
+      if (!passageFormatted) return '';
+      return `
+        <div>
+          <h3>${this.config.ui.bookIcon} ${this.escapeHtml(heading.toUpperCase())}</h3>
+          <div style="margin:8px 0; padding:12px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); line-height:1.7;">
+            ${passageFormatted}
+          </div>
+        </div>
+      `;
+    }
+
+    const safeQuery = this.escapeHtml(String(query || '').trim());
+    const cleanMatches = matches.slice(0, 2);
+    return `
+      <div>
+        <h3>${this.config.ui.bookIcon} ${safeQuery || 'Trecho bíblico'}</h3>
+        ${cleanMatches.map((item) => `
+          <div style="margin:8px 0; padding:10px; border-radius:10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);">
+            ${this.escapeHtml(item.snippet)}...
+          </div>
+        `).join('')}
+      </div>
+    `;
+  },
+
   // -------------------------
   // UTIL: debug
   // -------------------------
@@ -47818,7 +51624,13 @@ esperanca: {
   // -------------------------
   parseReference(input) {
     const raw = String(input || "").trim();
-    const t = this.normalize(raw);
+    const t = String(raw)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s:\-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
     // aceita:
     // - "joao 3" (capítulo)
@@ -47842,10 +51654,12 @@ esperanca: {
         ? (numRaw.match(/i{1,3}/i) ? ({ i: "1", ii: "2", iii: "3" }[numRaw.toLowerCase()] || null) : numRaw)
         : null;
 
-    const bookName = this.resolveBookName(bookRaw);
+    const bookName = this.resolveReferenceBookName(bookRaw, numPrefix);
     if (!bookName) return null;
+    const bookAlreadyHasPrefix = /^\d\s+/.test(this.normalize(bookName));
+    const finalPrefix = bookAlreadyHasPrefix ? null : numPrefix;
 
-    return { raw, numPrefix, book: bookName, chapter, verseStart, verseEnd };
+    return { raw, numPrefix: finalPrefix, book: bookName, chapter, verseStart, verseEnd };
   },
 
   // -------------------------
@@ -48092,6 +51906,8 @@ esperanca: {
   async reply(userText = "") {
     const raw = String(userText || "");
     const t = this.normalize(raw);
+    const asksBibleScriptText =
+      /\b(versiculo|passagem|texto|capitulo|ler|leia|mostra|mostrar|cite)\b/.test(t);
     const includeNotes = this.shouldIncludeNotes(raw, t);
     const notes = includeNotes ? await BibleNotesStore.search(raw) : [];
     const withNotes = (html) => (includeNotes && notes.length) ? (html + this.formatNotesBlock(notes)) : html;
@@ -48148,9 +51964,38 @@ esperanca: {
       `));
     }
 
-    // 3) Detecta referência tipo "João 3:16"
-    const refObj = this.parseReference(raw);
-    if (refObj) return withNotes(withLearning(this.formatReference(refObj)));
+    // 3) Detecta referência tipo "João 3:16" e também "capítulo 3 de João"
+    const scriptRef = this.parseScriptReferenceRequest(raw);
+    if (scriptRef) {
+      const base = scriptRef.fromDirectReference
+        ? ''
+        : `
+          <div>
+            <h3>${this.config.ui.okIcon} Referência detectada</h3>
+            <p><strong>${this.escapeHtml(`${this.titleCase(scriptRef.book)} ${scriptRef.chapter}`)}</strong></p>
+            <p>${this.config.ui.tipIcon} Buscando trechos desse capítulo no script da Bíblia.</p>
+          </div>
+        `;
+
+      const scriptLookup = await this.searchPdfScript(scriptRef.queryLabel, {
+        limit: 3,
+        minScore: 2,
+        filterBook: scriptRef.book,
+        filterChapter: scriptRef.chapter,
+        filterPrefix: scriptRef.numPrefix,
+        filterVerseStart: scriptRef.verseStart,
+        filterVerseEnd: scriptRef.verseEnd
+      });
+      const scriptBlock = this.formatPdfScriptResultBlock(scriptRef.queryLabel, scriptLookup, scriptRef);
+      const fallback = this.formatReference({
+        numPrefix: scriptRef.numPrefix || null,
+        book: scriptRef.book,
+        chapter: scriptRef.chapter,
+        verseStart: scriptRef.verseStart,
+        verseEnd: scriptRef.verseEnd
+      });
+      return withNotes(withLearning(scriptBlock || base || fallback));
+    }
 
     // 4) Detecta livro ("resumo de romanos")
     if (t.includes("resumo") || t.includes("livro") || t.includes("sobre o livro") || t.includes("o que fala")) {
@@ -48178,6 +52023,22 @@ esperanca: {
     // 6) Detecta tópico (principal)
     const topic = this.resolveTopic(t);
     if (topic) return withNotes(withLearning(this.formatTopic(topic)));
+
+    // 6.1) Busca no script da Bíblia quando o usuário pede texto/capítulo/versículo.
+    if (asksBibleScriptText) {
+      const parsedHint = this.parseScriptReferenceRequest(raw);
+      const scriptLookup = await this.searchPdfScript(raw, {
+        limit: 3,
+        minScore: 2,
+        filterBook: parsedHint?.book || '',
+        filterChapter: parsedHint?.chapter || null,
+        filterPrefix: parsedHint?.numPrefix || null,
+        filterVerseStart: parsedHint?.verseStart || null,
+        filterVerseEnd: parsedHint?.verseEnd || null
+      });
+      const scriptBlock = this.formatPdfScriptResultBlock(parsedHint?.queryLabel || raw, scriptLookup, parsedHint);
+      if (scriptBlock) return withNotes(withLearning(scriptBlock));
+    }
 
     // 7) fallback: sugerir opções próximas
     const suggestions = this.suggest(t);
@@ -48372,41 +52233,19 @@ function injectBibleTab() {
     content.className = 'tab-content';
     
     content.innerHTML = `
-      <div class="bible-interface bible-interface-simple">
+      <div class="bible-interface bible-interface-simple bible-only-notes">
         <div class="bible-header">
           <div class="bible-header-top">
-            <div class="bible-icon">✝️</div>
+            <div class="bible-icon">✍️</div>
             <div>
-              <h2 class="bible-title">Bíblia Simples</h2>
-              <p class="bible-subtitle">Leitura fácil e conversa com o assistente bíblico.</p>
+              <h2 class="bible-title">Anotações Bíblicas</h2>
+              <p class="bible-subtitle">Modo simplificado: aqui você abre apenas suas anotações.</p>
             </div>
           </div>
           <div class="bible-quick-actions">
-            <button class="btn ghost bible-tag" onclick="askBible('versículo do dia')">📖 Versículo do dia</button>
-            <button class="btn ghost bible-tag" onclick="askBible('plano de leitura simples')">📅 Plano de leitura</button>
-            <button class="btn ghost bible-tag" onclick="askBible('explicar joão 3:16')">💡 Explicar referência</button>
-            <button class="btn ghost bible-tag" id="openBibleNotesBtn">✍️ Anotações</button>
-            <button class="btn ghost bible-tag" id="bibleMarkSelectionBtn">🖍️ Marcar texto</button>
-            <button class="btn ghost bible-tag" id="bibleClearHighlightsBtn">🧹 Limpar marcas</button>
+            <button class="btn ghost bible-tag" id="openBibleNotesBtn">📖 Abrir anotações</button>
           </div>
         </div>
-        
-        <div id="bibleChatArea" class="bible-chat">
-          <div class="bible-message bot">
-            Olá, a Paz! Digite um tema, livro ou referência.<br>
-            Exemplos: <strong>Gênesis</strong>, <strong>Salmos 23</strong>, <strong>ansiedade</strong>.
-          </div>
-        </div>
-        <div class="bible-highlights-panel">
-          <div class="small">Trechos marcados</div>
-          <div class="bible-highlights-list" id="bibleHighlightsList"></div>
-        </div>
-
-        <div class="bible-input-area">
-          <input type="text" id="bibleInput" class="bible-input" placeholder="Digite aqui (ex: João 3:16)">
-          <button id="bibleSendBtn" class="bible-send-btn" aria-label="Enviar">➤</button>
-        </div>
-
       </div>
     `;
     
@@ -48417,9 +52256,31 @@ function injectBibleTab() {
     const btn = document.getElementById('bibleSendBtn');
     const chat = document.getElementById('bibleChatArea');
     const openNotesBtn = document.getElementById('openBibleNotesBtn');
-    const markSelectionBtn = document.getElementById('bibleMarkSelectionBtn');
-    const clearHighlightsBtn = document.getElementById('bibleClearHighlightsBtn');
-    const highlightsList = document.getElementById('bibleHighlightsList');
+    const booksGrid = document.getElementById('bibleBooksGrid');
+    const bookSearchInput = document.getElementById('bibleBookSearchInput');
+    const bookSearchBtn = document.getElementById('bibleBookSearchBtn');
+    const bookSelectedLabel = document.getElementById('bibleBookSelected');
+    const bookChapterInput = document.getElementById('bibleBookChapter');
+    const bookVerseInput = document.getElementById('bibleBookVerse');
+    const bookOpenBtn = document.getElementById('bibleBookOpenBtn');
+    let selectedBibleBook = '';
+
+    if (openNotesBtn) {
+      openNotesBtn.addEventListener('click', () => {
+        window.location.href = `biblia-anotacoes.html?v=${Date.now()}`;
+      });
+    }
+
+    const bibleOnlyNotesMode = !input || !btn || !chat;
+    if (bibleOnlyNotesMode) {
+      try {
+        window.__BIBLE_READY__ = true;
+        document.dispatchEvent(new CustomEvent('bible:ready'));
+      } catch (e) {
+        console.warn('Não foi possível setar __BIBLE_READY__ no modo simplificado', e);
+      }
+      return;
+    }
 
     const bibleEscapeHtml = (value = '') => String(value || '')
       .replace(/&/g, '&amp;')
@@ -48427,108 +52288,15 @@ function injectBibleTab() {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
-
-    const ensureBibleHighlightsState = () => {
-      if (!gameState || typeof gameState !== 'object') return [];
-      gameState.bibleHighlights = normalizeBibleHighlights(gameState.bibleHighlights || []);
-      return gameState.bibleHighlights;
-    };
-
-    const renderBibleHighlights = () => {
-      if (!highlightsList) return;
-      const items = ensureBibleHighlightsState();
-      if (!items.length) {
-        highlightsList.innerHTML = '<div class="small" style="opacity:.78;">Nenhum texto marcado ainda.</div>';
-        return;
-      }
-      const html = items
-        .slice()
-        .reverse()
-        .map((entry) => `
-          <div class="bible-highlight-item">
-            <div class="bible-highlight-text">${bibleEscapeHtml(entry.text)}</div>
-            <div class="bible-highlight-meta">${new Date(entry.date).toLocaleString('pt-BR')} • ${bibleEscapeHtml(entry.source || 'manual')}</div>
-            <div style="margin-top:6px;">
-              <button class="ghost" type="button" data-remove-highlight-id="${bibleEscapeHtml(entry.id)}">Remover</button>
-            </div>
-          </div>
-        `)
-        .join('');
-      highlightsList.innerHTML = html;
-      highlightsList.querySelectorAll('[data-remove-highlight-id]').forEach((removeBtn) => {
-        removeBtn.addEventListener('click', () => {
-          const highlightId = String(removeBtn.getAttribute('data-remove-highlight-id') || '').trim();
-          if (!highlightId || !gameState) return;
-          gameState.bibleHighlights = normalizeBibleHighlights((gameState.bibleHighlights || []).filter((item) => String(item?.id || '') !== highlightId));
-          renderBibleHighlights();
-          try { saveGame(true); } catch (e) { /* ignore */ }
-        });
-      });
-    };
-
-    const clearInlineBibleHighlights = () => {
+    const trimBibleChatHistory = () => {
       if (!chat) return;
-      const marks = Array.from(chat.querySelectorAll('mark.bible-inline-highlight'));
-      marks.forEach((markNode) => {
-        const parent = markNode.parentNode;
-        if (!parent) return;
-        while (markNode.firstChild) parent.insertBefore(markNode.firstChild, markNode);
-        parent.removeChild(markNode);
-      });
-    };
-
-    const markBibleSelectedText = () => {
-      if (!chat) return;
-      const selection = (typeof window !== 'undefined' && typeof window.getSelection === 'function')
-        ? window.getSelection()
-        : null;
-      if (!selection || selection.rangeCount < 1 || selection.isCollapsed) {
-        showToast('Selecione um texto da Bíblia para marcar.');
-        return;
+      const maxMessages = 8;
+      const nodes = Array.from(chat.querySelectorAll('.bible-message'));
+      if (nodes.length <= maxMessages) return;
+      const removeCount = nodes.length - maxMessages;
+      for (let i = 0; i < removeCount; i += 1) {
+        nodes[i]?.remove();
       }
-      const range = selection.getRangeAt(0);
-      const commonNode = range.commonAncestorContainer;
-      const commonEl = commonNode?.nodeType === 1 ? commonNode : commonNode?.parentElement;
-      if (!commonEl || !chat.contains(commonEl)) {
-        showToast('Selecione apenas texto dentro da área da Bíblia.');
-        return;
-      }
-      const selectedText = String(selection.toString() || '').replace(/\s+/g, ' ').trim().slice(0, 320);
-      if (selectedText.length < 2) {
-        showToast('Selecione um trecho maior para marcar.');
-        return;
-      }
-
-      const markNode = document.createElement('mark');
-      markNode.className = 'bible-inline-highlight';
-      try {
-        range.surroundContents(markNode);
-      } catch (e) {
-        try {
-          const fragment = range.extractContents();
-          markNode.appendChild(fragment);
-          range.insertNode(markNode);
-        } catch (e2) {
-          console.warn('Falha ao marcar seleção da Bíblia:', e2);
-          showToast('Não consegui marcar esse trecho agora.');
-          return;
-        }
-      }
-
-      try { selection.removeAllRanges(); } catch (e) { /* ignore */ }
-      if (gameState && typeof gameState === 'object') {
-        const existing = ensureBibleHighlightsState();
-        existing.push({
-          id: `bh_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          text: selectedText,
-          date: new Date().toISOString(),
-          source: 'seleção'
-        });
-        gameState.bibleHighlights = normalizeBibleHighlights(existing);
-        try { saveGame(true); } catch (e) { /* ignore */ }
-      }
-      renderBibleHighlights();
-      showToast('🖍️ Texto marcado com sucesso.');
     };
 
     const sendMessage = async () => {
@@ -48540,6 +52308,7 @@ function injectBibleTab() {
         userDiv.className = 'bible-message user';
         userDiv.textContent = text;
         chat.appendChild(userDiv);
+        trimBibleChatHistory();
         chat.scrollTop = chat.scrollHeight;
         
         // Bot Thinking
@@ -48576,6 +52345,7 @@ function injectBibleTab() {
 
         botDiv.innerHTML = finalResponse;
         chat.appendChild(botDiv);
+        trimBibleChatHistory();
         try {
           if (typeof saveOracleChatMessage === 'function') {
             saveOracleChatMessage('assistant', finalResponse).catch(e => console.warn('Erro ao salvar mensagem do assistente:', e));
@@ -48586,42 +52356,120 @@ function injectBibleTab() {
         chat.scrollTop = chat.scrollHeight;
 
     };
+
+    const sendBiblePresetQuery = (query) => {
+      const safeQuery = String(query || '').trim();
+      if (!safeQuery || !input || !btn) return;
+      input.value = safeQuery;
+      btn.click();
+    };
+
+    const getVerseQueryFromSelection = () => {
+      if (!selectedBibleBook) return '';
+      const chapter = Math.max(1, parseInt(String(bookChapterInput?.value || '1'), 10) || 1);
+      const verse = Math.max(1, parseInt(String(bookVerseInput?.value || '1'), 10) || 1);
+      if (bookChapterInput) bookChapterInput.value = String(chapter);
+      if (bookVerseInput) bookVerseInput.value = String(verse);
+      return `${selectedBibleBook} ${chapter}:${verse}`;
+    };
+
+    const openSelectedBookVerse = () => {
+      const verseQuery = getVerseQueryFromSelection();
+      if (!verseQuery) {
+        showToast('Selecione um livro para abrir versículo.');
+        return;
+      }
+      sendBiblePresetQuery(verseQuery);
+    };
+
+    const setSelectedBibleBook = (bookName) => {
+      selectedBibleBook = String(bookName || '').trim();
+      if (bookSelectedLabel) {
+        bookSelectedLabel.textContent = selectedBibleBook
+          ? `${selectedBibleBook} selecionado. Escolha capítulo e versículo.`
+          : 'Nenhum livro selecionado.';
+      }
+      if (bookChapterInput && !bookChapterInput.value) bookChapterInput.value = '1';
+      if (bookVerseInput && !bookVerseInput.value) bookVerseInput.value = '1';
+      if (booksGrid) {
+        booksGrid.querySelectorAll('.bible-book-card').forEach((card) => {
+          const cardBook = String(card.getAttribute('data-book') || '');
+          card.classList.toggle('active', !!selectedBibleBook && cardBook === selectedBibleBook);
+        });
+      }
+    };
+
+    const renderBibleBooksGrid = (filterText = '') => {
+      if (!booksGrid) return;
+      const filter = BibleAssistant.normalize(String(filterText || '').trim());
+      const rows = (Array.isArray(BIBLE_BOOKS) ? BIBLE_BOOKS : [])
+        .filter((book) => {
+          if (!filter) return true;
+          const nameNorm = BibleAssistant.normalize(book?.name || '');
+          const groupNorm = BibleAssistant.normalize(book?.group || '');
+          return nameNorm.includes(filter) || groupNorm.includes(filter);
+        })
+        .map((book) => `
+          <button class="bible-book-card ${selectedBibleBook === book.name ? 'active' : ''}" data-book="${bibleEscapeHtml(book.name)}" type="button">
+            <div class="bible-book-name">${bibleEscapeHtml(book.name)}</div>
+            <div class="bible-book-meta">${bibleEscapeHtml(book.group || '')} • ${bibleEscapeHtml(book.testament || '')}</div>
+          </button>
+        `)
+        .join('');
+
+      booksGrid.innerHTML = rows || '<div class="small" style="opacity:.78;">Nenhum livro encontrado com esse termo.</div>';
+      booksGrid.querySelectorAll('.bible-book-card').forEach((card) => {
+        card.addEventListener('click', () => {
+          const bookName = String(card.getAttribute('data-book') || '').trim();
+          if (!bookName) return;
+          setSelectedBibleBook(bookName);
+          openSelectedBookVerse();
+        });
+      });
+    };
+
+    const handleBibleBookSearch = () => {
+      const rawSearch = String(bookSearchInput?.value || '').trim();
+      if (!rawSearch) {
+        renderBibleBooksGrid('');
+        return;
+      }
+
+      const parsedReference = BibleAssistant.parseScriptReferenceRequest(rawSearch);
+      if (parsedReference) {
+        if (parsedReference.book) setSelectedBibleBook(parsedReference.book);
+        if (bookChapterInput && parsedReference.chapter) bookChapterInput.value = String(parsedReference.chapter);
+        if (bookVerseInput && parsedReference.verseStart) bookVerseInput.value = String(parsedReference.verseStart);
+        sendBiblePresetQuery(parsedReference.queryLabel || rawSearch);
+        return;
+      }
+
+      const resolvedBook = BibleAssistant.resolveBookName(rawSearch);
+      if (resolvedBook) {
+        setSelectedBibleBook(resolvedBook);
+        renderBibleBooksGrid(resolvedBook);
+        return;
+      }
+
+      renderBibleBooksGrid(rawSearch);
+    };
     
     btn.addEventListener('click', sendMessage);
     input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
-
-    if (openNotesBtn) {
-      openNotesBtn.addEventListener('click', () => {
-        window.location.href = 'biblia-anotacoes.html';
+    if (bookSearchBtn) bookSearchBtn.addEventListener('click', handleBibleBookSearch);
+    if (bookSearchInput) {
+      bookSearchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleBibleBookSearch();
       });
     }
+    if (bookOpenBtn) bookOpenBtn.addEventListener('click', openSelectedBookVerse);
 
-    if (markSelectionBtn) {
-      markSelectionBtn.addEventListener('click', markBibleSelectedText);
-    }
-
-    if (clearHighlightsBtn) {
-      clearHighlightsBtn.addEventListener('click', () => {
-        clearInlineBibleHighlights();
-        if (gameState && typeof gameState === 'object') {
-          gameState.bibleHighlights = [];
-          try { saveGame(true); } catch (e) { /* ignore */ }
-        }
-        renderBibleHighlights();
-        showToast('Marcações da Bíblia limpas.');
-      });
-    }
-    
     // Global helper for tags
     window.askBible = (query) => {
-        const input = document.getElementById('bibleInput');
-        if(input) {
-            input.value = query;
-            document.getElementById('bibleSendBtn').click();
-        }
+        sendBiblePresetQuery(query);
     };
 
-    renderBibleHighlights();
+    renderBibleBooksGrid('');
     // sinaliza que a aba Bíblia e handlers estão prontos
     try {
       window.__BIBLE_READY__ = true;
@@ -48672,11 +52520,14 @@ function getFinanceSummary() {
   if (!gameState || !gameState.finances) {
     return "📊 Você ainda não tem registros financeiros. Diz algo como <strong>gastei 50 no almoço</strong> para começar!";
   }
-  
-  const finances = gameState.finances;
-  const income = finances.filter(f => f.type === 'income').reduce((sum, f) => sum + f.value, 0);
-  const expenses = finances.filter(f => f.type === 'expense').reduce((sum, f) => sum + f.value, 0);
-  const balance = income - expenses;
+
+  const financeCtx = getAssistantFinanceMonthContext();
+  const finances = Array.isArray(financeCtx.transactions) ? financeCtx.transactions : [];
+  const monthSummary = financeCtx.monthSummary || { income: 0, expense: 0, monthNet: 0, closingBalance: 0 };
+  const income = Number(monthSummary.income || 0);
+  const expenses = Number(monthSummary.expense || 0);
+  const balance = Number(monthSummary.monthNet || 0);
+  const accumulated = Number(monthSummary.closingBalance || 0);
   
   // Agrupa gastos por categoria
   const categories = {};
@@ -48685,10 +52536,11 @@ function getFinanceSummary() {
     categories[cat] = (categories[cat] || 0) + f.value;
   });
   
-  let response = `<strong>💰 Resumo Financeiro:</strong><br><br>`;
+  let response = `<strong>💰 Resumo Financeiro (${financeCtx.monthLabel}):</strong><br><br>`;
   response += `📈 Entradas: <strong style="color: #4CAF50">R$ ${income.toFixed(2)}</strong><br>`;
   response += `📉 Saídas: <strong style="color: #f44336">R$ ${expenses.toFixed(2)}</strong><br>`;
-  response += `💵 Saldo: <strong style="color: ${balance >= 0 ? '#4CAF50' : '#f44336'}">R$ ${balance.toFixed(2)}</strong><br><br>`;
+  response += `💵 Saldo do mês: <strong style="color: ${balance >= 0 ? '#4CAF50' : '#f44336'}">R$ ${balance.toFixed(2)}</strong><br>`;
+  response += `🧾 Saldo acumulado até este mês: <strong>R$ ${accumulated.toFixed(2)}</strong><br><br>`;
   
   if (Object.keys(categories).length > 0) {
     response += `<strong>📊 Gastos por categoria:</strong><br>`;
@@ -48698,7 +52550,7 @@ function getFinanceSummary() {
     });
   }
   
-  response += `<br>${balance >= 0 ? '✅ Suas finanças estão no verde!' : '⚠️ Atenção com os gastos!'}`;
+  response += `<br>${balance >= 0 ? '✅ Suas finanças do mês estão no verde!' : '⚠️ Atenção com os gastos do mês!'}`;
   
   return response;
 }
@@ -48713,11 +52565,10 @@ function getStatusInfo() {
   const xp = gameState.xp || 0;
   const pendingTasks = (gameState.dailyTasks || []).filter(t => !t.completed).length;
   
-  // Calcula saldo financeiro
-  const finances = gameState.finances || [];
-  const income = finances.filter(f => f.type === 'income').reduce((sum, f) => sum + f.value, 0);
-  const expenses = finances.filter(f => f.type === 'expense').reduce((sum, f) => sum + f.value, 0);
-  const balance = income - expenses;
+  // Calcula saldo financeiro do mês selecionado (não soma todos os meses)
+  const financeCtx = getAssistantFinanceMonthContext();
+  const monthSummary = financeCtx.monthSummary || { monthNet: 0 };
+  const balance = Number(monthSummary.monthNet || 0);
   
   // Trabalho de hoje
   const today = new Date().toISOString().split('T')[0];
@@ -48729,7 +52580,7 @@ function getStatusInfo() {
   let response = `<strong>🎮 Status de ${treatment}:</strong><br><br>`;
   response += `⭐ Nível: <strong>${level}</strong> | XP: <strong>${xp}/100</strong><br>`;
   response += `📝 Tarefas pendentes: <strong>${pendingTasks}</strong><br>`;
-  response += `💰 Saldo: <strong style="color: ${balance >= 0 ? '#4CAF50' : '#f44336'}">R$ ${balance.toFixed(2)}</strong><br>`;
+  response += `💰 Saldo (${financeCtx.monthLabel}): <strong style="color: ${balance >= 0 ? '#4CAF50' : '#f44336'}">R$ ${balance.toFixed(2)}</strong><br>`;
   
   if (todayProd > 0 || todayMoney > 0) {
     response += `<br><strong>📊 Hoje:</strong><br>`;
@@ -49937,6 +53788,30 @@ elements.adminUsersReloadBtn?.addEventListener('click', () => {
     setAdminPanelStatus(String(error?.message || 'Falha ao atualizar usuários.'), true);
   });
 });
+elements.adminKnowledgeSearchInput?.addEventListener('input', () => {
+  renderAdminKnowledgeList();
+});
+elements.adminKnowledgeReloadBtn?.addEventListener('click', () => {
+  loadAdminKnowledgeForPanel({ silent: false }).catch((error) => {
+    console.error('Erro ao atualizar knowledge_base no painel admin:', error);
+    setAdminKnowledgeStatus(String(error?.message || 'Falha ao atualizar base de conhecimento.'), true);
+  });
+});
+elements.adminKnowledgeSaveBtn?.addEventListener('click', () => {
+  saveAdminKnowledgeFromPanel().catch((error) => {
+    console.error('Erro ao salvar knowledge_base no painel admin:', error);
+    showToast(`❌ ${error?.message || 'Falha ao salvar conhecimento.'}`);
+  });
+});
+elements.adminKnowledgeDeleteBtn?.addEventListener('click', () => {
+  deleteAdminKnowledgeFromPanel().catch((error) => {
+    console.error('Erro ao excluir knowledge_base no painel admin:', error);
+    showToast(`❌ ${error?.message || 'Falha ao excluir conhecimento.'}`);
+  });
+});
+elements.adminKnowledgeNewBtn?.addEventListener('click', () => {
+  clearAdminKnowledgeEditor({ keepStatus: false });
+});
 elements.adminUserSaveBtn?.addEventListener('click', () => {
   saveAdminPanelUserChanges().catch((error) => {
     console.error('Erro ao salvar alterações do painel admin:', error);
@@ -50068,6 +53943,7 @@ document.addEventListener('keydown', (event) => {
 updateAdminPanelVisibility();
 setAdminNewsComposerEditState('');
 updateAdminNewsVideoComposerLabel();
+clearAdminKnowledgeEditor({ keepStatus: false });
 
 // --- Lógica do FAB (Botão Flutuante) ---
 if (elements.fabMainBtn) {
@@ -50481,6 +54357,15 @@ window.addEventListener('appinstalled', () => {
 function flushSaveOnAppBackground(reason = 'background') {
   if (!isLoggedIn || !gameState) return;
   try {
+    savePlayerRoomInputDraft(elements.playerRoomInput?.value || '');
+  } catch (e) {}
+  try {
+    saveOracleChatInputDraft(document.getElementById('chatInput')?.value || '');
+  } catch (e) {}
+  try {
+    saveAdminNewsComposerDraft();
+  } catch (e) {}
+  try {
     persistGameStateLocalFast({ silent: true, includeBackup: true, reason });
   } catch (e) {
     console.warn(`Falha ao persistir local ao sair (${reason}):`, e);
@@ -50777,6 +54662,8 @@ let _nativeLocalNotificationsChannelReady = false;
 let _nativeWorkNotifLookupRetries = 0;
 let _taskDueNotifInterval = null;
 let _localNotificationActionListenerBound = false;
+let _localNotificationReceivedListenerBound = false;
+const ORACLE_ALARM_SAFE_DEFAULT_LABEL = 'Alarme do Assistente';
 const _registeredLocalNotificationActionTypes = new Set();
 const NOTIFICATION_PREFS_KEY = 'ur_notification_prefs_v1';
 const NOTIFICATION_BILLS_LAST_KEY = 'ur_notification_bills_last_v1';
@@ -51370,6 +55257,7 @@ async function sendNotificationTestFromSettings() {
 loadNotificationPrefs();
 updateNotificationSettingsUI();
 bindLocalNotificationActionListener();
+bindLocalNotificationReceivedListener();
 startTaskDueNotificationWatcher();
 
 function getNativeWorkTimerNotifier() {
@@ -51588,11 +55476,99 @@ async function ensureLocalNotificationsChannel() {
       lights: true,
       vibration: true
     });
+    await local.createChannel({
+      id: 'ur_alarm',
+      name: 'Alarmes Universo Real',
+      description: 'Alertas de alarme e lembretes urgentes',
+      importance: 5,
+      visibility: 1,
+      lights: true,
+      vibration: true
+    });
   } catch (e) {
     // canal pode já existir
   } finally {
     _nativeLocalNotificationsChannelReady = true;
   }
+}
+
+function extractNotificationPayloadData(source = {}) {
+  const safe = source && typeof source === 'object' ? source : {};
+  const notification = safe.notification && typeof safe.notification === 'object'
+    ? safe.notification
+    : {};
+
+  const candidates = [
+    safe.data,
+    safe.extra,
+    notification.data,
+    notification.extra
+  ];
+
+  for (const entry of candidates) {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      return entry;
+    }
+  }
+  return {};
+}
+
+function extractOracleAlarmPayload(source = {}) {
+  const safe = source && typeof source === 'object' ? source : {};
+  const notification = safe.notification && typeof safe.notification === 'object'
+    ? safe.notification
+    : {};
+  const data = extractNotificationPayloadData(source);
+
+  const typeCandidates = [
+    data?.type,
+    safe?.type,
+    notification?.type
+  ]
+    .map((v) => String(v || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  const targetCandidates = [
+    data?.target,
+    safe?.target,
+    notification?.target
+  ]
+    .map((v) => String(v || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  const isAlarm = [...typeCandidates, ...targetCandidates].some(
+    (entry) => entry === 'oracle-alarm' || entry.includes('oracle-alarm') || entry === 'alarm'
+  );
+  if (!isAlarm) return null;
+
+  const alarmId = String(
+    data?.alarmId ||
+    safe?.alarmId ||
+    notification?.alarmId ||
+    notification?.id ||
+    safe?.id ||
+    ''
+  ).trim();
+
+  const label = String(
+    data?.label ||
+    safe?.label ||
+    notification?.body ||
+    safe?.body ||
+    notification?.title ||
+    safe?.title ||
+    ORACLE_ALARM_SAFE_DEFAULT_LABEL
+  ).trim() || ORACLE_ALARM_SAFE_DEFAULT_LABEL;
+
+  return { alarmId, label, data };
+}
+
+function triggerOracleAlarmFromPayload(source = {}) {
+  const payload = extractOracleAlarmPayload(source);
+  if (!payload) return false;
+  startOracleAlarmMusic({ id: payload.alarmId, label: payload.label });
+  showOracleAlarmInlineBanner({ id: payload.alarmId, label: payload.label, notified: true });
+  return true;
 }
 
 function startWorkTimerFromNotificationAction() {
@@ -51729,10 +55705,11 @@ function bindLocalNotificationActionListener() {
           event?.notificationAction?.actionId ||
           ''
         );
-        const data = event?.notification?.extra && typeof event.notification.extra === 'object'
-          ? event.notification.extra
-          : {};
-        handleNotificationActionFromPayload(actionId, data);
+        const data = extractNotificationPayloadData(event);
+        const handled = handleNotificationActionFromPayload(actionId, data);
+        if (!handled) {
+          triggerOracleAlarmFromPayload(event);
+        }
       } catch (e) {
         console.warn('Falha ao processar ação de notificação local:', e);
       }
@@ -51743,8 +55720,29 @@ function bindLocalNotificationActionListener() {
   }
 }
 
+function bindLocalNotificationReceivedListener() {
+  if (_localNotificationReceivedListenerBound || !isNativeCapacitorPlatform()) return;
+  const local = getCapacitorLocalNotificationsPlugin();
+  if (!local || typeof local.addListener !== 'function') return;
+
+  _localNotificationReceivedListenerBound = true;
+  try {
+    local.addListener('localNotificationReceived', (event) => {
+      try {
+        triggerOracleAlarmFromPayload(event);
+      } catch (e) {
+        console.warn('Falha ao processar recebimento de notificação local:', e);
+      }
+    });
+  } catch (e) {
+    _localNotificationReceivedListenerBound = false;
+    console.warn('Falha ao registrar listener de recebimento da notificação local:', e);
+  }
+}
+
 async function ensureNotificationPermission() {
   bindLocalNotificationActionListener();
+  bindLocalNotificationReceivedListener();
   if (isNativeCapacitorPlatform()) {
     let nativeDenied = false;
     try {
@@ -51810,6 +55808,10 @@ async function showNotificationViaNative(title, options = {}) {
     const safeBody = String(options.body || '').trim();
     const safeTag = String(options.tag || 'ur-alert').trim() || 'ur-alert';
     const safeCategory = String(options.category || (options.ongoing ? 'service' : 'reminder'));
+    const isAlarmCategory = safeCategory.toLowerCase() === 'alarm';
+    const safeChannelId = String(options.channelId || (isAlarmCategory ? 'ur_alarm' : 'ur_default')).trim() || 'ur_default';
+    const safeOngoing = options.ongoing != null ? !!options.ongoing : isAlarmCategory;
+    const safeAutoCancel = options.autoCancel != null ? !!options.autoCancel : !safeOngoing;
     const safeActions = (Array.isArray(options.actions) ? options.actions : [])
       .map((entry) => {
         const action = normalizeNotificationActionId(entry?.action || entry?.id || entry);
@@ -51871,9 +55873,9 @@ async function showNotificationViaNative(title, options = {}) {
             id: notificationId,
             title: safeTitle,
             body: safeBody,
-            channelId: 'ur_default',
-            ongoing: !!options.ongoing,
-            autoCancel: options.ongoing ? false : true,
+            channelId: safeChannelId,
+            ongoing: safeOngoing,
+            autoCancel: safeAutoCancel,
             summaryArgument: safeTag,
             extra: options.data && typeof options.data === 'object' ? options.data : {},
             actionTypeId: actionTypeId || undefined
@@ -52044,22 +56046,48 @@ async function stopWorkNotification() {
 // Hook into WorkTimer events
 window.addEventListener('workTimerStarted', (e) => {
   const startTime = e?.detail?.startTime || localStorage.getItem('work_start_time');
+  // Início manual/automático do timer sempre libera o bloqueio.
+  setWorkTimerAutoStartHold(false);
   startWorkNotification(startTime);
-  syncNativeWorkTimerStateWithMonitor({ running: true, startTime: Number(startTime || 0) }).catch(() => {});
+  syncNativeWorkTimerStateWithMonitor({
+    running: true,
+    startTime: Number(startTime || 0),
+    autoStartHold: false
+  }).catch(() => {});
 });
 
 window.addEventListener('workTimerStopped', (e) => {
+  const source = String(e?.detail?.source || 'app').toLowerCase();
+  const isAutoStop = source.includes('auto');
+  if (!isAutoStop) {
+    // Parada manual: bloqueia auto-início enquanto permanecer dentro da área.
+    setWorkTimerAutoStartHold(true);
+    _workLocationInsideSinceMs = Date.now();
+  }
   stopWorkNotification();
-  syncNativeWorkTimerStateWithMonitor({ running: false, startTime: 0 }).catch(() => {});
+  syncNativeWorkTimerStateWithMonitor({
+    running: false,
+    startTime: 0,
+    autoStartHold: !isAutoStop
+  }).catch(() => {});
 });
 
 try {
   const persistedStart = Number(localStorage.getItem('work_start_time') || 0);
+  const persistedHold = isWorkTimerAutoStartHoldActive();
   if (persistedStart > 0) {
     startWorkNotification(persistedStart);
-    syncNativeWorkTimerStateWithMonitor({ running: true, startTime: persistedStart }).catch(() => {});
+    syncNativeWorkTimerStateWithMonitor({
+      running: true,
+      startTime: persistedStart,
+      autoStartHold: false
+    }).catch(() => {});
   } else {
-    syncNativeWorkTimerStateWithMonitor({ running: false, startTime: 0 }).catch(() => {});
+    syncNativeWorkTimerStateWithMonitor({
+      running: false,
+      startTime: 0,
+      autoStartHold: persistedHold
+    }).catch(() => {});
   }
 } catch (e) {}
 
@@ -52183,6 +56211,8 @@ const ORACLE_ALARM_RING_AUTO_STOP_MS = 180000;
 const ORACLE_ALARM_INLINE_BANNER_ID = 'oracleAlarmInlineBanner';
 const ORACLE_ALARM_CUSTOM_AUDIO_DATA_KEY = 'ur_oracle_alarm_custom_audio_data_v1';
 const ORACLE_ALARM_CUSTOM_AUDIO_META_KEY = 'ur_oracle_alarm_custom_audio_meta_v1';
+const ORACLE_ALARM_DEFAULT_MUSIC_URL = './saladepoker.mp3';
+const ORACLE_ALARM_PERSIST_MAX_BYTES = Math.floor(2.5 * 1024 * 1024);
 const oracleAlarmTimers = new Map();
 let oracleAlarmRingTimer = null;
 let oracleAlarmRingAutoStopTimer = null;
@@ -52191,6 +56221,9 @@ var oracleAlarmCustomAudioDataUrl = '';
 var oracleAlarmCustomAudioName = '';
 var oracleAlarmCustomAudioPersisted = false;
 var oracleAlarmCustomAudioElement = null;
+let oracleAlarmAudioUnlockBound = false;
+let oracleAlarmSessionAudioUrl = '';
+let oracleAlarmSessionAudioName = '';
 
 function buildOracleAlarmNotificationId(recordId = '') {
   const safe = String(recordId || '').trim();
@@ -52237,7 +56270,9 @@ async function scheduleOracleAlarmLocalNotification(record = {}) {
         id: notificationId,
         title: '⏰ Alarme Universo Real',
         body: label,
-        channelId: 'ur_default',
+        channelId: 'ur_alarm',
+        ongoing: true,
+        autoCancel: false,
         schedule: {
           at: new Date(fireAt),
           allowWhileIdle: true
@@ -52245,7 +56280,8 @@ async function scheduleOracleAlarmLocalNotification(record = {}) {
         extra: {
           type: 'oracle-alarm',
           target: 'oracle-alarm',
-          alarmId
+          alarmId,
+          label
         },
         actionTypeId: actionTypeId || undefined
       }
@@ -52521,10 +56557,9 @@ function sanitizeOracleAlarmLabel(label) {
 function getOracleAlarmClockParts(fireAt) {
   const base = new Date(Number(fireAt) || Date.now());
   const target = new Date(base.getTime());
-  if (target.getSeconds() > 0 || target.getMilliseconds() > 0) {
+  target.setSeconds(0, 0);
+  if (target.getTime() <= Date.now() + 1000) {
     target.setMinutes(target.getMinutes() + 1, 0, 0);
-  } else {
-    target.setSeconds(0, 0);
   }
   return {
     hour: target.getHours(),
@@ -52862,7 +56897,41 @@ function persistOracleAlarmCustomAudioPreference() {
   }
 }
 
+function revokeOracleAlarmSessionAudioUrl() {
+  const current = String(oracleAlarmSessionAudioUrl || '').trim();
+  if (!current || !current.startsWith('blob:')) return;
+  try {
+    URL.revokeObjectURL(current);
+  } catch (e) {}
+}
+
+function setOracleAlarmSessionAudioFromFile(file) {
+  if (!file) return false;
+  if (!(window.URL && typeof window.URL.createObjectURL === 'function')) return false;
+  try {
+    revokeOracleAlarmSessionAudioUrl();
+    const objectUrl = URL.createObjectURL(file);
+    oracleAlarmSessionAudioUrl = String(objectUrl || '').trim();
+    oracleAlarmSessionAudioName = String(file.name || 'audio personalizado').trim().slice(0, 120);
+    return !!oracleAlarmSessionAudioUrl;
+  } catch (e) {
+    console.warn('Falha ao criar URL temporária para música do alarme:', e);
+    return false;
+  }
+}
+
+function getOracleAlarmAudioSource() {
+  const sessionUrl = String(oracleAlarmSessionAudioUrl || '').trim();
+  if (sessionUrl) return sessionUrl;
+  const persistedDataUrl = String(oracleAlarmCustomAudioDataUrl || '').trim();
+  if (persistedDataUrl) return persistedDataUrl;
+  return String(ORACLE_ALARM_DEFAULT_MUSIC_URL || '').trim();
+}
+
 function clearOracleAlarmCustomAudioPreference({ silent = false } = {}) {
+  revokeOracleAlarmSessionAudioUrl();
+  oracleAlarmSessionAudioUrl = '';
+  oracleAlarmSessionAudioName = '';
   oracleAlarmCustomAudioDataUrl = '';
   oracleAlarmCustomAudioName = '';
   persistOracleAlarmCustomAudioPreference();
@@ -52910,6 +56979,68 @@ function ensureOracleAlarmCustomAudioElement() {
   return oracleAlarmCustomAudioElement;
 }
 
+async function primeOracleAlarmCustomAudioPlayback() {
+  const source = getOracleAlarmAudioSource();
+  if (!source) return false;
+
+  const audio = ensureOracleAlarmCustomAudioElement();
+  if (!audio) return false;
+
+  const prevMuted = !!audio.muted;
+  const prevVolume = Number.isFinite(Number(audio.volume)) ? Number(audio.volume) : 1;
+  try {
+    if (audio.src !== source) audio.src = source;
+    audio.currentTime = 0;
+    audio.muted = true;
+    audio.volume = 0;
+    const maybe = audio.play();
+    if (maybe && typeof maybe.then === 'function') {
+      await maybe;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = prevMuted;
+    audio.volume = prevVolume;
+    return true;
+  } catch (e) {
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = prevMuted;
+      audio.volume = prevVolume;
+    } catch (err) {}
+    return false;
+  }
+}
+
+function bindOracleAlarmAudioUnlockGesture() {
+  if (oracleAlarmAudioUnlockBound) return;
+  oracleAlarmAudioUnlockBound = true;
+
+  const handler = () => {
+    detach();
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        Promise.resolve(ctx.resume()).catch(() => {});
+      }
+    } catch (e) {}
+    Promise.resolve(primeOracleAlarmCustomAudioPlayback()).catch(() => {});
+  };
+
+  const detach = () => {
+    try { document.removeEventListener('pointerdown', handler, true); } catch (e) {}
+    try { document.removeEventListener('touchstart', handler, true); } catch (e) {}
+    try { document.removeEventListener('click', handler, true); } catch (e) {}
+    try { document.removeEventListener('keydown', handler, true); } catch (e) {}
+  };
+
+  try { document.addEventListener('pointerdown', handler, true); } catch (e) {}
+  try { document.addEventListener('touchstart', handler, true); } catch (e) {}
+  try { document.addEventListener('click', handler, true); } catch (e) {}
+  try { document.addEventListener('keydown', handler, true); } catch (e) {}
+}
+
 function startOracleAlarmFallbackBurstLoop() {
   if (oracleAlarmRingTimer) return;
   playOracleAlarmMusicBurst();
@@ -52919,16 +57050,18 @@ function startOracleAlarmFallbackBurstLoop() {
 }
 
 function playOracleAlarmCustomTrack() {
-  const dataUrl = String(oracleAlarmCustomAudioDataUrl || '').trim();
-  if (!dataUrl || !dataUrl.startsWith('data:audio/')) return false;
+  const source = getOracleAlarmAudioSource();
+  if (!source) return false;
 
   const audio = ensureOracleAlarmCustomAudioElement();
   if (!audio) return false;
 
   try {
-    if (audio.src !== dataUrl) {
-      audio.src = dataUrl;
+    if (audio.src !== source) {
+      audio.src = source;
     }
+    audio.muted = false;
+    audio.volume = 1;
     audio.currentTime = 0;
     const maybe = audio.play();
     if (maybe && typeof maybe.then === 'function') {
@@ -52947,21 +57080,27 @@ function playOracleAlarmCustomTrack() {
 }
 
 function getAlarmMusicDisplayName() {
+  const session = String(oracleAlarmSessionAudioName || '').trim();
+  if (session) return session;
   const custom = String(oracleAlarmCustomAudioName || '').trim();
   if (custom) return custom;
-  return 'arquivo personalizado';
+  return 'épica do guerreiro (padrão)';
 }
 
 function updateAlarmMusicSettingsUI() {
-  const hasCustom = !!String(oracleAlarmCustomAudioDataUrl || '').trim();
-  const customPersisted = hasCustom && !!oracleAlarmCustomAudioPersisted;
+  const hasSession = !!String(oracleAlarmSessionAudioUrl || '').trim();
+  const hasPersisted = !!String(oracleAlarmCustomAudioDataUrl || '').trim();
+  const hasCustom = hasSession || hasPersisted;
+  const customPersisted = hasPersisted && !!oracleAlarmCustomAudioPersisted;
   const pickText = hasCustom ? '🎵 Trocar música do alarme' : '🎵 Música do alarme';
   const clearText = hasCustom ? '🧹 Remover música do alarme' : '🧹 Sem música personalizada';
   const statusText = hasCustom
-    ? (customPersisted
-      ? `Música do alarme: ${getAlarmMusicDisplayName()}`
-      : `Música do alarme: ${getAlarmMusicDisplayName()} (apenas nesta sessão)`)
-    : 'Música do alarme: padrão do app.';
+    ? (hasSession
+      ? `Música do alarme: ${getAlarmMusicDisplayName()} (sessão atual)`
+      : (customPersisted
+        ? `Música do alarme: ${getAlarmMusicDisplayName()}`
+        : `Música do alarme: ${getAlarmMusicDisplayName()} (apenas nesta sessão)`))
+    : 'Música do alarme: épica do guerreiro (padrão).';
 
   if (elements.alarmMusicPickBtn) elements.alarmMusicPickBtn.textContent = pickText;
   if (elements.drawerAlarmMusicPickBtn) elements.drawerAlarmMusicPickBtn.textContent = pickText;
@@ -52991,6 +57130,8 @@ try {
   oracleAlarmCustomAudioName = '';
   oracleAlarmCustomAudioPersisted = false;
 }
+bindOracleAlarmAudioUnlockGesture();
+Promise.resolve(primeOracleAlarmCustomAudioPlayback()).catch(() => {});
 try {
   updateAlarmMusicSettingsUI();
 } catch (e) {
@@ -53007,25 +57148,45 @@ async function handleAlarmMusicFileSelection(file) {
   }
 
   try {
-    const dataUrl = await readAlarmMusicFileAsDataUrl(file);
-    if (!String(dataUrl || '').startsWith('data:audio/')) {
-      showToast('⚠️ Não consegui usar esse áudio.');
-      return false;
-    }
-    const dataBytes = getDataUrlBytes(dataUrl);
-    if (!(dataBytes > 0)) {
-      showToast('⚠️ Não consegui usar esse áudio.');
-      return false;
+    const sizeBytes = Math.max(0, Number(file.size || 0) || 0);
+    let saved = false;
+
+    if (sizeBytes > ORACLE_ALARM_PERSIST_MAX_BYTES) {
+      const appliedSession = setOracleAlarmSessionAudioFromFile(file);
+      if (!appliedSession) {
+        showToast('⚠️ Não consegui usar esse áudio grande. Tente outro arquivo.');
+        return false;
+      }
+      oracleAlarmCustomAudioDataUrl = '';
+      oracleAlarmCustomAudioName = '';
+      oracleAlarmCustomAudioPersisted = false;
+      persistOracleAlarmCustomAudioPreference();
+    } else {
+      const dataUrl = await readAlarmMusicFileAsDataUrl(file);
+      if (!String(dataUrl || '').startsWith('data:audio/')) {
+        showToast('⚠️ Não consegui usar esse áudio.');
+        return false;
+      }
+      const dataBytes = getDataUrlBytes(dataUrl);
+      if (!(dataBytes > 0)) {
+        showToast('⚠️ Não consegui usar esse áudio.');
+        return false;
+      }
+
+      revokeOracleAlarmSessionAudioUrl();
+      oracleAlarmSessionAudioUrl = '';
+      oracleAlarmSessionAudioName = '';
+      oracleAlarmCustomAudioDataUrl = dataUrl;
+      oracleAlarmCustomAudioName = String(file.name || 'audio personalizado').trim().slice(0, 120);
+      saved = persistOracleAlarmCustomAudioPreference();
     }
 
-    oracleAlarmCustomAudioDataUrl = dataUrl;
-    oracleAlarmCustomAudioName = String(file.name || 'audio personalizado').trim().slice(0, 120);
-    const saved = persistOracleAlarmCustomAudioPreference();
+    await primeOracleAlarmCustomAudioPlayback();
     updateAlarmMusicSettingsUI();
     if (saved) {
       showToast('✅ Música do alarme atualizada!');
     } else {
-      showToast('✅ Música aplicada, mas arquivo grande não foi salvo para reinício do app.');
+      showToast('✅ Música aplicada! Arquivo grande funciona na sessão atual.');
     }
     return true;
   } catch (e) {
@@ -53395,6 +57556,7 @@ function handleNativeLaunchPayload(payload = {}) {
     if (actionId === ORACLE_ALARM_ACTION_STOP) {
       return handleOracleAlarmNotificationAction(actionId, safe);
     }
+    triggerOracleAlarmFromPayload(safe);
     return true;
   }
   if (
@@ -53466,10 +57628,20 @@ function consumeNotificationActionFromQueryParams() {
         target,
         type: target,
         alarmId: alarmId || null,
+        label: String(params.get('label') || '').trim(),
         messageId: blessId || '',
         senderName: blessSender || '',
         targetUserId: blessTargetId || '',
         targetUsername: blessTargetName || ''
+      }) || handled;
+    }
+
+    if (!handled && (target === 'oracle-alarm' || target === 'alarm' || target.includes('oracle-alarm'))) {
+      handled = triggerOracleAlarmFromPayload({
+        target,
+        type: target,
+        alarmId: alarmId || null,
+        label: String(params.get('label') || '').trim()
       }) || handled;
     }
 

@@ -71,7 +71,8 @@ public class WorkLocationMonitorPlugin extends Plugin {
     final double lng = call.getDouble(WorkLocationMonitorService.EXTRA_WORK_LNG, Double.NaN);
     final int radius = call.getInt(WorkLocationMonitorService.EXTRA_RADIUS_METERS, 220);
     final long cooldownMs = call.getLong(WorkLocationMonitorService.EXTRA_PROMPT_COOLDOWN_MS, 30L * 60L * 1000L);
-    final int autoStopDistance = call.getInt(WorkLocationMonitorService.EXTRA_AUTO_STOP_DISTANCE_METERS, 1);
+    final int autoStopDistance = call.getInt(WorkLocationMonitorService.EXTRA_AUTO_STOP_DISTANCE_METERS, 120);
+    final boolean resetPrompt = call.getBoolean(WorkLocationMonitorService.EXTRA_RESET_PROMPT, false);
 
     if (!Double.isFinite(lat) || !Double.isFinite(lng)) {
       call.reject("Local de trabalho inválido para iniciar monitor.");
@@ -90,6 +91,7 @@ public class WorkLocationMonitorPlugin extends Plugin {
     intent.putExtra(WorkLocationMonitorService.EXTRA_RADIUS_METERS, radius);
     intent.putExtra(WorkLocationMonitorService.EXTRA_PROMPT_COOLDOWN_MS, cooldownMs);
     intent.putExtra(WorkLocationMonitorService.EXTRA_AUTO_STOP_DISTANCE_METERS, autoStopDistance);
+    intent.putExtra(WorkLocationMonitorService.EXTRA_RESET_PROMPT, resetPrompt);
 
     dispatchMonitorServiceIntent(intent, true);
 
@@ -114,12 +116,16 @@ public class WorkLocationMonitorPlugin extends Plugin {
   public void syncTimerState(PluginCall call) {
     final boolean running = call.getBoolean(WorkLocationMonitorService.EXTRA_TIMER_RUNNING, false);
     final long startTime = call.getLong(WorkLocationMonitorService.EXTRA_TIMER_START_TIME, 0L);
+    final Boolean autoStartHold = call.getBoolean(WorkLocationMonitorService.EXTRA_AUTO_START_HOLD);
 
     final Context ctx = getContext();
     final Intent intent = new Intent(ctx, WorkLocationMonitorService.class);
     intent.setAction(WorkLocationMonitorService.ACTION_SYNC_TIMER_STATE);
     intent.putExtra(WorkLocationMonitorService.EXTRA_TIMER_RUNNING, running);
     intent.putExtra(WorkLocationMonitorService.EXTRA_TIMER_START_TIME, startTime);
+    if (autoStartHold != null) {
+      intent.putExtra(WorkLocationMonitorService.EXTRA_AUTO_START_HOLD, autoStartHold.booleanValue());
+    }
     dispatchMonitorServiceIntent(intent, running);
 
     JSObject out = buildStatusPayload();
@@ -156,7 +162,9 @@ public class WorkLocationMonitorPlugin extends Plugin {
     JSObject out = new JSObject();
     final boolean fgLocation = isForegroundLocationGranted();
     final boolean bgLocation = isBackgroundLocationGranted();
-    final boolean locationGranted = fgLocation && bgLocation;
+    // Foreground service de localização já cobre o monitor em segundo plano neste app.
+    // Não bloqueamos o recurso quando ACCESS_BACKGROUND_LOCATION não vier explicitamente.
+    final boolean locationGranted = fgLocation;
     final boolean notificationsGranted = isNotificationGranted();
 
     out.put("granted", locationGranted);
@@ -175,6 +183,7 @@ public class WorkLocationMonitorPlugin extends Plugin {
     out.put("monitorEnabled", prefs.getBoolean(WorkLocationMonitorService.KEY_MONITOR_ENABLED, false));
     out.put("timerRunning", prefs.getBoolean(WorkLocationMonitorService.KEY_TIMER_RUNNING, false));
     out.put("timerStartTime", prefs.getLong(WorkLocationMonitorService.KEY_TIMER_START_MS, 0L));
+    out.put("autoStartHold", prefs.getBoolean(WorkLocationMonitorService.KEY_AUTO_START_HOLD, false));
     out.put("lastPromptAt", prefs.getLong(WorkLocationMonitorService.KEY_LAST_PROMPT_AT, 0L));
     out.put("lastDistanceMeters", prefs.getFloat(WorkLocationMonitorService.KEY_LAST_DISTANCE_METERS, -1f));
     out.put("lastInside", prefs.getBoolean(WorkLocationMonitorService.KEY_LAST_IS_INSIDE, false));
